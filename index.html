@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Greivin Cordero Solano | Professional Portfolio</title>
+<style>
+:root {
+  --navy: #1A3A4A; --navy-light: #1e4659; --gold: #B8953D; --gold-light: #d4b96a;
+  --cream: #F5F0E8; --white: #FFFFFF; --gray: #6B7280; --dark: #1a1a1a;
+  --shadow: 0 4px 24px rgba(0,0,0,.08);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior:smooth; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color:#333; background:var(--white); line-height:1.7; }
+body.en .lang-es { display:none; }
+body:not(.en) .lang-en { display:none; }
+
+nav { position:fixed; top:0; width:100%; z-index:100; background:rgba(26,58,74,.95); backdrop-filter:blur(10px); padding:12px 0; border-bottom:2px solid var(--gold); }
+nav .inner { max-width:1100px; margin:0 auto; padding:0 24px; display:flex; align-items:center; justify-content:space-between; }
+nav .logo { color:var(--white); font-weight:700; font-size:18px; text-decoration:none; }
+nav .logo span { color:var(--gold); }
+nav a { color:var(--white); text-decoration:none; margin-left:20px; font-size:13px; font-weight:500; transition:color .2s; }
+nav a:hover { color:var(--gold); }
+.lang-toggle { background:var(--gold); color:var(--navy); border:none; padding:6px 14px; border-radius:50px; cursor:pointer; font-weight:700; font-size:13px; margin-left:12px; transition:all .2s; }
+.lang-toggle:hover { background:var(--gold-light); }
+
+.hero { background:linear-gradient(135deg, var(--navy) 0%, #0d262e 100%); color:var(--white); min-height:100vh; display:flex; align-items:center; position:relative; overflow:hidden; padding-top:70px; }
+.hero::before { content:''; position:absolute; top:0; right:0; width:50%; height:100%; background:url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 320"><path fill="%231e4659" opacity=".3" d="M0,160L48,176C96,192,192,224,288,213.3C384,203,480,149,576,128C672,107,768,117,864,144C960,171,1056,213,1152,208C1248,203,1344,149,1392,122.7L1440,96L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"/></svg>') no-repeat bottom; background-size:cover; opacity:.5; }
+.hero .inner { max-width:1100px; margin:0 auto; padding:0 24px; position:relative; z-index:1; display:grid; grid-template-columns:1fr 1fr; gap:60px; align-items:center; }
+.hero h1 { font-size:48px; line-height:1.15; margin-bottom:12px; font-weight:800; }
+.hero h1 span { color:var(--gold); display:block; }
+.hero .sub { font-size:18px; color:rgba(255,255,255,.7); margin-bottom:32px; }
+.hero .contact-bar { display:flex; flex-wrap:wrap; gap:16px 28px; margin-bottom:32px; }
+.hero .contact-bar div { display:flex; align-items:center; gap:8px; font-size:14px; color:rgba(255,255,255,.85); }
+.hero .contact-bar .icon { width:20px; height:20px; background:var(--gold); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--navy); flex-shrink:0; }
+.lang-bar-hero { display:flex; gap:16px; justify-content:center; }
+.lang-bar-hero button { padding:14px 32px; border-radius:12px; font-size:18px; font-weight:700; cursor:pointer; border:2px solid var(--gold); transition:all .2s; }
+.lang-btn-es { background:var(--gold); color:var(--navy); }
+.lang-btn-en { background:transparent; color:var(--white); }
+body.en .lang-btn-en { background:var(--gold); color:var(--navy); }
+body.en .lang-btn-es { background:transparent; color:var(--white); }
+.lang-btn-es:hover, .lang-btn-en:hover { background:var(--gold-light) !important; color:var(--navy) !important; }
+.hero-img { text-align:center; }
+.hero-img .circle { width:560px; height:560px; border-radius:50%; background:linear-gradient(135deg, rgba(184,149,61,.2), rgba(184,149,61,.05)); border:4px solid var(--gold); display:flex; align-items:center; justify-content:center; margin:0 auto; position:relative; z-index:2; overflow:hidden; }
+.hero-img .circle::after { content:''; position:absolute; width:580px; height:580px; border-radius:50%; border:1px solid rgba(184,149,61,.3); animation:pulse 3s infinite; }
+@keyframes pulse { 0%,100%{transform:scale(1);opacity:.3} 50%{transform:scale(1.08);opacity:.1} }
+.hero-img .circle img { width:100%; height:100%; border-radius:50%; object-fit:cover; position:relative; z-index:1; }
+
+section { padding:100px 24px; }
+section .inner { max-width:1100px; margin:0 auto; }
+.section-title { text-align:center; margin-bottom:60px; }
+.section-title h2 { font-size:36px; color:var(--navy); margin-bottom:8px; }
+.section-title .line { width:60px; height:3px; background:var(--gold); margin:16px auto 0; }
+
+.about { background:var(--cream); }
+.about p { font-size:18px; max-width:900px; margin:0 auto 24px; text-align:left; color:#444; }
+
+.comps-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px,1fr)); gap:16px; }
+.comp-card { background:var(--white); border-left:4px solid var(--gold); padding:20px 24px; border-radius:0 8px 8px 0; box-shadow:var(--shadow); transition:transform .2s; }
+.comp-card:hover { transform:translateY(-2px); }
+.comp-card h4 { color:var(--navy); font-size:15px; }
+
+.logros-list { max-width:800px; margin:0 auto; }
+.logro { display:flex; gap:16px; margin-bottom:24px; align-items:flex-start; }
+.logro .bullet { width:12px; height:12px; background:var(--gold); border-radius:50%; margin-top:6px; flex-shrink:0; }
+.logro p { color:#444; }
+
+.timeline { position:relative; padding-left:40px; }
+.timeline::before { content:''; position:absolute; left:15px; top:8px; bottom:0; width:2px; background:var(--gold); }
+.timeline-item { margin-bottom:48px; position:relative; }
+.timeline-item::before { content:''; position:absolute; left:-33px; top:8px; width:14px; height:14px; background:var(--navy); border:3px solid var(--gold); border-radius:50%; }
+.timeline-item h3 { color:var(--navy); font-size:20px; margin-bottom:4px; }
+.timeline-item .company { color:var(--gold); font-weight:600; margin-bottom:8px; }
+.timeline-item .date { color:var(--gray); font-size:14px; margin-bottom:12px; }
+.timeline-item ul { list-style:none; }
+.timeline-item li { padding:4px 0; color:#444; font-size:15px; }
+.timeline-item li::before { content:'\2022'; color:var(--gold); font-weight:bold; margin-right:8px; }
+
+.edu-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px,1fr)); gap:20px; }
+.edu-card { background:var(--white); border-radius:12px; overflow:hidden; box-shadow:var(--shadow); transition:transform .2s; }
+.edu-card:hover { transform:translateY(-3px); }
+.edu-card img { width:100%; height:220px; object-fit:contain; background:#f8f8f8; border-bottom:2px solid var(--gold); padding:16px; cursor:pointer; }
+.edu-card .info { padding:16px 20px; }
+.edu-card .info h4 { color:var(--navy); font-size:15px; margin-bottom:4px; }
+.edu-card .info .sub { color:var(--gold); font-size:13px; font-weight:600; }
+.edu-card .info .date { color:var(--gray); font-size:12px; margin-top:4px; }
+
+.skills-grid { display:grid; grid-template-columns:1fr 1fr; gap:48px; max-width:900px; margin:0 auto; }
+.skills-block h3 { color:var(--navy); font-size:20px; margin-bottom:20px; }
+.skills-block h3::after { content:''; display:block; width:40px; height:2px; background:var(--gold); margin-top:8px; }
+.tag-cloud { display:flex; flex-wrap:wrap; gap:10px; }
+.tag { background:var(--cream); color:var(--navy); padding:8px 16px; border-radius:50px; font-size:14px; font-weight:500; border:1px solid rgba(184,149,61,.3); }
+
+.lang-bar { display:flex; justify-content:center; gap:40px; flex-wrap:wrap; }
+.lang-item { text-align:center; }
+.lang-item .level { font-size:48px; font-weight:800; color:var(--gold); }
+.lang-item .name { color:var(--navy); font-size:18px; font-weight:600; }
+.lang-item .desc { color:var(--gray); font-size:13px; }
+
+.extra-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px,1fr)); gap:20px; }
+.extra-card { background:var(--white); border-radius:12px; overflow:hidden; box-shadow:var(--shadow); }
+.extra-card img { width:100%; height:250px; object-fit:contain; background:#f8f8f8; padding:12px; cursor:pointer; }
+.extra-card .info { padding:16px 20px; }
+.extra-card .info h4 { color:var(--navy); font-size:14px; }
+.extra-card .info .sub { color:var(--gold); font-size:12px; font-weight:600; }
+
+.download { background:var(--navy); text-align:center; }
+.download h2 { color:var(--white); margin-bottom:24px; }
+.btn { display:inline-block; padding:14px 36px; border-radius:50px; font-size:16px; font-weight:600; text-decoration:none; transition:all .2s; cursor:pointer; border:none; }
+.btn-gold { background:var(--gold); color:var(--white); }
+.btn-gold:hover { background:var(--gold-light); transform:translateY(-2px); }
+.btn-outline { border:2px solid var(--white); color:var(--white); margin-left:12px; }
+.btn-outline:hover { background:var(--white); color:var(--navy); }
+
+footer { background:#0d262e; color:rgba(255,255,255,.6); text-align:center; padding:40px 24px; font-size:14px; }
+footer strong { color:var(--gold); }
+footer a { color:var(--gold); }
+
+.lightbox { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,.92); z-index:200; justify-content:center; align-items:center; cursor:pointer; }
+.lightbox.active { display:flex; }
+.lightbox img { max-width:95%; max-height:95%; object-fit:contain; cursor:default; }
+.lightbox .close { position:absolute; top:20px; right:30px; color:white; font-size:48px; cursor:pointer; z-index:201; line-height:1; }
+.lightbox .prev, .lightbox .next { position:absolute; top:50%; transform:translateY(-50%); color:white; font-size:48px; cursor:pointer; z-index:201; padding:16px; user-select:none; display:none; transition:opacity .2s; opacity:.5; }
+.lightbox .prev:hover, .lightbox .next:hover { opacity:1; }
+.lightbox .prev { left:10px; }
+.lightbox .next { right:10px; }
+.lightbox .page-indicator { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); color:rgba(255,255,255,.6); font-size:14px; z-index:201; display:none; background:rgba(0,0,0,.5); padding:4px 12px; border-radius:20px; }
+
+@media(max-width:768px) {
+  .hero .inner { grid-template-columns:1fr; text-align:center; }
+  .hero h1 { font-size:36px; }
+  .hero-img { order:-1; }
+  .hero-img .circle { width:300px; height:300px; }
+  .hero-img .circle::after { width:320px; height:320px; }
+  .skills-grid { grid-template-columns:1fr; }
+  nav a { margin-left:10px; font-size:11px; }
+  .contact-bar { justify-content:center; }
+  .lang-toggle { margin-left:6px; padding:4px 10px; font-size:11px; }
+}
+</style>
+</head>
+<body class="en">
+
+<nav>
+  <div class="inner">
+    <a href="#" class="logo">G<span>C</span>S</a>
+    <div>
+      <a href="#about" class="lang-es">Sobre mí</a><a href="#about" class="lang-en">About</a>
+      <a href="#experiencia" class="lang-es">Experiencia</a><a href="#experiencia" class="lang-en">Experience</a>
+      <a href="#educacion" class="lang-es">Educación</a><a href="#educacion" class="lang-en">Education</a>
+      <a href="#proyectos" class="lang-es">Proyectos</a><a href="#proyectos" class="lang-en">Projects</a>
+      <a href="#certificaciones" class="lang-es">Certificaciones</a><a href="#certificaciones" class="lang-en">Certifications</a>
+      <a href="#documentos" class="lang-es">Documentos</a><a href="#documentos" class="lang-en">Documents</a>
+      <a href="#descargar" class="lang-es">Descargar</a><a href="#descargar" class="lang-en">Download</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<header class="hero">
+  <div class="inner">
+    <div>
+      <h1>Greivin Mauricio<br><span>Cordero Solano</span></h1>
+      <p class="sub lang-es">Profesional en Hospitalidad y Relaciones con Clientes | Operaciones Turísticas | Marketing Digital | Bienes Raíces</p>
+      <p class="sub lang-en">Hospitality & Client Relations Professional | Tourism Operations | Digital Marketing | Real Estate</p>
+      <div class="contact-bar">
+        <div style="background:rgba(10,102,194,.2); border:1px solid rgba(10,102,194,.4); border-radius:50px; padding:8px 20px;"><span class="icon" style="background:#0A66C2;color:white;">in</span> <a href="https://linkedin.com/in/greivin-cordero-solano-411084202" target="_blank" style="color:white;text-decoration:none;font-weight:700;font-size:16px;">linkedin.com/in/greivin-cordero-solano</a></div>
+        <div><span class="icon">ID</span> 1-1456-0231</div>
+        <div><span class="icon">@</span> maucorderosolano@gmail.com</div>
+        <div><span class="icon">T</span> +506 8415 4797</div>
+        <div><span class="icon">L</span> Quepos, Puntarenas, Costa Rica</div>
+      </div>
+    </div>
+    <div class="hero-img">
+      <div class="lang-bar-hero" style="margin-bottom:20px;">
+        <button class="lang-btn-es" onclick="setLang('es')" style="font-size:18px;padding:14px 32px;">🇪🇸 Español</button>
+        <button class="lang-btn-en" onclick="setLang('en')" style="font-size:18px;padding:14px 32px;">🇬🇧 English</button>
+      </div>
+      <div class="circle"><img src="media/foto-perfil.png" alt="Greivin Cordero"></div>
+    </div>
+  </div>
+</header>
+
+<!-- ABOUT -->
+<section class="about" id="about">
+  <div class="inner">
+    <div class="section-title"><h2 class="lang-es">Sobre Mí</h2><h2 class="lang-en">About Me</h2><div class="line"></div></div>
+    <div style="max-width:800px; margin:0 auto;">
+      <p class="lang-es">Soy <strong style="color:var(--navy)">Greivin Mauricio Cordero Solano</strong>, un profesional en Hospitalidad y Relaciones con Clientes con una sólida trayectoria en operaciones de complejos turísticos, soporte en ventas inmobiliarias y marketing digital. He gestionado flujos de trabajo diarios, logística de inventarios y experiencias de huéspedes en entornos hoteleros dinámicos, manteniendo estándares de servicio rigurosos garantizando eficiencia operativa.</p>
+      <p class="lang-en">I am <strong style="color:var(--navy)">Greivin Mauricio Cordero Solano</strong>, a Hospitality & Client Relations Professional with a robust background spanning tourism complex operations, real estate sales support, and digital marketing. Having managed daily workflows, inventory logistics, and guest experiences in dynamic lodging environments, I maintain rigorous service standards while ensuring seamless operational efficiency.</p>
+
+      <p class="lang-es">He trasladado mi sólida base en relaciones con clientes al <strong style="color:var(--gold)">sector inmobiliario</strong>, donde me especializo en gestión de CRM, servicio al cliente bilingüe y seguimiento de prospectos para impulsar el crecimiento comercial. Integro activamente estrategias de marketing digital, gestión de redes sociales y creación de contenido en mi flujo de trabajo.</p>
+      <p class="lang-en">I have successfully translated my strong foundation in client relations into the <strong style="color:var(--gold)">real estate sector</strong>, where I specialize in CRM management, bilingual customer service, and lead tracking to support commercial growth. I actively integrate digital marketing strategies, social media management, and content creation into my workflow.</p>
+
+      <p class="lang-es">Actualmente curso el <strong style="color:var(--navy)">Diplomado en Gestión Turística Sostenible en la UNED</strong> para alinear mi experiencia práctica con estrategias sostenibles de largo plazo. Aplicando Excel avanzado, seguimiento de KPIs y fundamentos de análisis de datos, mi objetivo es transformar datos operativos y comerciales en información accionable.</p>
+      <p class="lang-en">Currently pursuing a <strong style="color:var(--navy)">Bachelor's degree in Sustainable Tourism Management at UNED</strong> to align my practical management experience with sustainable, long-term industry strategies. By applying advanced Excel, KPI tracking, and data analysis fundamentals, my goal is to transform operational and commercial data into actionable insights.</p>
+    </div>
+  </div>
+</section>
+
+<!-- COMPETENCIAS -->
+<section id="competencias">
+  <div class="inner">
+    <div class="section-title"><h2 class="lang-es">Competencias Clave</h2><h2 class="lang-en">Core Competencies</h2><div class="line"></div></div>
+    <div style="max-width:800px; margin:0 auto 40px;">
+      <h3 class="lang-es" style="color:var(--navy); font-size:18px; margin-bottom:12px;">Hospitalidad y Operaciones</h3>
+      <h3 class="lang-en" style="color:var(--navy); font-size:18px; margin-bottom:12px;">Hospitality & Operations</h3>
+      <div class="comp-card" style="margin-bottom:8px;"><h4 class="lang-es">Gestión de Complejos Turísticos, Relaciones con Huéspedes, Logística de Inventarios, Estándares de Servicio</h4><h4 class="lang-en">Tourism Complex Management, Guest Relations, Inventory Logistics, Service Standards</h4></div>
+    </div>
+    <div style="max-width:800px; margin:0 auto 40px;">
+      <h3 class="lang-es" style="color:var(--navy); font-size:18px; margin-bottom:12px;">Soporte Inmobiliario y Comercial</h3>
+      <h3 class="lang-en" style="color:var(--navy); font-size:18px; margin-bottom:12px;">Real Estate & Commercial Support</h3>
+      <div class="comp-card" style="margin-bottom:8px;"><h4 class="lang-es">Soporte en Ventas, Seguimiento de Prospectos, Relaciones Bilingües con Clientes, Gestión de CRM</h4><h4 class="lang-en">Sales Support, Lead Tracking, Bilingual Client Relations, CRM Management</h4></div>
+    </div>
+    <div style="max-width:800px; margin:0 auto 40px;">
+      <h3 class="lang-es" style="color:var(--navy); font-size:18px; margin-bottom:12px;">Marketing y Herramientas Digitales</h3>
+      <h3 class="lang-en" style="color:var(--navy); font-size:18px; margin-bottom:12px;">Marketing & Digital Tools</h3>
+      <div class="comp-card" style="margin-bottom:8px;"><h4 class="lang-es">Estrategia de Marketing Digital, Gestión de Redes Sociales, Creación de Contenido (Canva)</h4><h4 class="lang-en">Digital Marketing Strategy, Social Media Management, Content Creation (Canva)</h4></div>
+    </div>
+    <div style="max-width:800px; margin:0 auto 40px;">
+      <h3 class="lang-es" style="color:var(--navy); font-size:18px; margin-bottom:12px;">Analítica y Organización</h3>
+      <h3 class="lang-en" style="color:var(--navy); font-size:18px; margin-bottom:12px;">Analytics & Organization</h3>
+      <div class="comp-card" style="margin-bottom:8px;"><h4 class="lang-es">Excel Avanzado, Seguimiento de KPIs, Organización de Datos, Optimización de Procesos</h4><h4 class="lang-en">Advanced Excel, KPI Tracking, Data Organization, Process Optimization</h4></div>
+    </div>
+    <div style="max-width:800px; margin:0 auto 40px;">
+      <h3 class="lang-es" style="color:var(--navy); font-size:18px; margin-bottom:12px;">Sostenibilidad</h3>
+      <h3 class="lang-en" style="color:var(--navy); font-size:18px; margin-bottom:12px;">Sustainability</h3>
+      <div class="comp-card"><h4 class="lang-es">Fundamentos de Turismo Sostenible, Estrategias Operativas Eco-conscientes</h4><h4 class="lang-en">Sustainable Tourism Fundamentals, Eco-conscious Operational Strategies</h4></div>
+    </div>
+  </div>
+</section>
+
+<!-- LOGROS -->
+<section style="background:var(--cream)">
+  <div class="inner">
+    <div class="section-title"><h2 class="lang-es">Experiencia Laboral</h2><h2 class="lang-en">Work Experience</h2><div class="line"></div></div>
+    <div class="timeline">
+      <div class="timeline-item">
+        <h3 class="lang-es">Gerente de Alimentos y Bebidas | Administrativo y Marketing Digital</h3><h3 class="lang-en">Food & Beverage Manager | Administrative & Digital Marketing</h3>
+        <div class="company">Mango Moon Villas / Restaurante Carambola · Quepos, Costa Rica</div>
+        <div class="date lang-es">Feb 2026 – Presente · 5 meses</div><div class="date lang-en">Feb 2026 – Present · 5 months</div>
+        <ul class="lang-es"><li>Liderazgo integral de operaciones de A&B: supervisión de servicio, calidad y satisfacción del cliente en un restaurante turístico de alta exigencia.</li><li>Gestión completa de costos y presupuestos: control de porcentajes, análisis de variaciones y optimización de márgenes.</li><li>Creación de herramientas avanzadas en Excel para control de inventarios, análisis de KPIs y reportes operativos automatizados.</li><li>Diseño de publicidad digital en Canva para campañas en Facebook, Instagram y WhatsApp Business.</li><li>Gestión de compras, proveedores y cadena de abastecimiento con negociación de precios.</li><li>Capacitación y desarrollo del personal en estándares de hospitalidad y eficiencia operativa.</li></ul>
+        <ul class="lang-en"><li>Full oversight of F&B operations, service quality, and customer satisfaction at a high-demand tourism restaurant.</li><li>Complete cost and budget management: percentage control, variance analysis, and margin optimization.</li><li>Created advanced Excel tools for inventory control, KPI analysis, and automated operational reports.</li><li>Designed digital advertising in Canva for Facebook, Instagram, and WhatsApp Business campaigns.</li><li>Procurement, supplier, and supply chain management with price negotiation.</li><li>Staff training and development in hospitality standards and operational efficiency.</li></ul>
+      </div>
+      <div class="timeline-item">
+        <h3 class="lang-es">Asistente de Servicio al Cliente y Soporte en Ventas</h3><h3 class="lang-en">Customer Service & Sales Support Assistant</h3>
+        <div class="company">Paradise Real Estate · Costa Rica (Remoto)</div>
+        <div class="date lang-es">Mar 2021 – Ene 2026 · 4 años 11 meses</div><div class="date lang-en">Mar 2021 – Jan 2026 · 4 yrs 11 months</div>
+        <ul class="lang-es"><li>Servicio al cliente y soporte comercial en el sector inmobiliario, organizando y gestionando información con herramientas avanzadas de Excel.</li><li>Organización y mantenimiento de bases de datos de clientes para asegurar información precisa y seguimiento estructurado.</li><li>Seguimiento de leads y prospectos a lo largo del proceso de ventas mediante registros digitales estructurados.</li><li>Análisis básico de datos de clientes para apoyar la priorización y el seguimiento comercial.</li><li>Creación de materiales promocionales y contenido visual utilizando Canva y herramientas digitales.</li><li>Apoyo en tareas de marketing y procesos administrativos mediante plataformas en línea.</li></ul>
+        <ul class="lang-en"><li>Customer service and commercial support within the real estate sector, organizing and managing customer information with advanced Excel tools.</li><li>Organization and maintenance of client databases to ensure accurate, updated information and structured follow-up.</li><li>Tracking of leads and prospects throughout the sales process using structured digital records.</li><li>Basic analysis of customer data to support prioritization and sales follow-up.</li><li>Creation of promotional materials and visual content using Canva and digital tools.</li><li>Support in marketing tasks and administrative processes using online platforms.</li></ul>
+      </div>
+      <div class="timeline-item">
+        <h3 class="lang-es">Coordinador de Servicios al Cliente | Bartender</h3><h3 class="lang-en">Guest Services Coordinator | Bartender</h3>
+        <div class="company lang-es">Restaurante El Lagarto / Tedesco Norte · Puntarenas, Costa Rica</div><div class="company lang-en">El Lagarto Restaurant / Tedesco Norte · Puntarenas, Costa Rica</div>
+        <div class="date lang-es">Ago 2021 – Nov 2025 · 4 años 4 meses</div><div class="date lang-en">Aug 2021 – Nov 2025 · 4 yrs 4 months</div>
+        <ul class="lang-es"><li>Atención personalizada a huéspedes garantizando experiencias memorables y estándares de excelencia para visitantes locales e internacionales.</li><li>Servicio de bar: elaboración de bebidas, control de inventario de licores y soporte en control de costos.</li><li>Diseño y actualización de menús bilingües y materiales promocionales para turismo.</li><li>Gestión de reservas, seguimiento de clientes y resolución de incidencias en tiempo real.</li><li>Capacitación del equipo en estándares de servicio, comunicación efectiva y procedimientos del restaurante.</li></ul>
+        <ul class="lang-en"><li>Personalized guest service ensuring memorable experiences and excellence standards for local and international visitors.</li><li>Bar operations: beverage preparation, liquor inventory tracking, and cost control support.</li><li>Design and update of bilingual menus and promotional materials for tourism.</li><li>Reservation management, client follow-up, and real-time issue resolution.</li><li>Team training in customer service standards, effective communication, and restaurant procedures.</li></ul>
+      </div>
+      <div class="timeline-item">
+        <h3 class="lang-es">Bartender y Servicios al Cliente</h3><h3 class="lang-en">Bartender & Guest Services Specialist</h3>
+        <div class="company">Ronnys Place · Puntarenas, Costa Rica</div>
+        <div class="date lang-es">Nov 2017 – Jun 2020 · 2 años 8 meses</div><div class="date lang-en">Nov 2017 – Jun 2020 · 2 yrs 8 months</div>
+        <ul class="lang-es"><li>Atención al cliente de primera línea y servicio de bar en un restaurante de alto volumen y ritmo acelerado.</li><li>Preparación de bebidas y gestión de operaciones de bar manteniendo consistencia, calidad y estándares de servicio.</li><li>Control de inventario: monitoreo de existencias, rotación, reporte de discrepancias y decisiones de reabastecimiento.</li><li>Apoyo en operaciones diarias del restaurante asegurando flujo de trabajo eficiente durante horas pico.</li><li>Servicio personalizado a huéspedes locales e internacionales en un entorno dinámico y multicultural.</li></ul>
+        <ul class="lang-en"><li>Provided front-line guest service and bartending in a high-volume, fast-paced restaurant environment.</li><li>Prepared craft beverages and managed bar operations maintaining consistency, quality, and service standards.</li><li>Managed inventory control: stock monitoring, rotation, discrepancy reporting, and replenishment decisions.</li><li>Supported daily restaurant operations ensuring efficient workflow and service continuity during peak hours.</li><li>Delivered personalized service to local and international guests in a dynamic, multicultural environment.</li></ul>
+      </div>
+      <div class="timeline-item">
+        <h3 class="lang-es">Asistente Administrativo y Especialista en Servicio al Cliente Internacional (Remoto)</h3><h3 class="lang-en">Administrative Assistant & International Customer Service Specialist (Remote)</h3>
+        <div class="company">Australian Belt Cleaning Pty. Ltd. · Sydney, Australia <span class="lang-es">(remoto desde Costa Rica)</span><span class="lang-en">(remote from Costa Rica)</span></div>
+        <div class="date lang-es">Ene 2014 – Abr 2017 · 3 años 4 meses</div><div class="date lang-en">Jan 2014 – Apr 2017 · 3 yrs 4 months</div>
+        <ul class="lang-es"><li>Gestión de tareas administrativas integrales y servicio al cliente bilingüe (inglés-español) de alto nivel para el mercado latinoamericano.</li><li>Traducción de documentos corporativos técnicos, presentaciones de capacitación y activos comerciales facilitando operaciones en Centroamérica.</li><li>Coordinación con equipos internacionales en múltiples zonas horarias mediante Skype, Zoom y Google Workspace.</li><li>Demostrada disciplina operativa, autogestión y resolución proactiva de problemas durante más de 3 años en entorno 100% remoto.</li><li>Carta de recomendación formal del Director General destacando responsabilidad, profesionalismo y adaptabilidad excepcionales.</li></ul>
+        <ul class="lang-en"><li>Managed comprehensive administrative tasks and provided high-level bilingual (English-Spanish) customer service tailored to the Latin American market.</li><li>Translated technical corporate documents, training presentations, and commercial assets facilitating business operations for clients in Central America.</li><li>Coordinated with international teams across multiple time zones via Skype, Zoom, and Google Workspace.</li><li>Demonstrated strong operational discipline, self-management, and proactive problem-solving over 3+ years in a fully remote environment.</li><li>Earned a formal letter of recommendation from the Managing Director for exceptional responsibility, professionalism, and adaptability.</li></ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- EDUCACIÓN -->
+<section id="educacion" style="background:var(--cream)">
+  <div class="inner">
+    <div class="section-title"><h2 class="lang-es">Educación</h2><h2 class="lang-en">Education</h2><div class="line"></div></div>
+    <div style="max-width:700px; margin:0 auto;">
+      <div style="margin-bottom:32px">
+        <h3 class="lang-es" style="color:var(--navy); font-size:20px;">Educación y Certificaciones</h3>
+        <h3 class="lang-en" style="color:var(--navy); font-size:20px;">Education & Certifications</h3>
+      </div>
+      <div class="tag-cloud">
+        <span class="tag lang-es">Diplomado en Gestión Turística Sostenible — UNED, Abril 2026</span><span class="tag lang-en">Diploma in Sustainable Tourism Management — UNED, April 2026</span>
+        <span class="tag lang-es">Bachiller en Educación Media — MEP, Diciembre 2022</span><span class="tag lang-en">High School Diploma — Ministry of Public Education, December 2022</span>
+        <span class="tag lang-es">Inglés Intermedio B2 (Certificación) — INA, 2026</span><span class="tag lang-en">Intermediate English B2 (Skills Certification) — INA, 2026</span>
+        <span class="tag lang-es">Bartender y Salonero Profesional — INA, 882 horas, 2012–2013</span><span class="tag lang-en">Professional Bartender & Server — INA, 882 hours, 2012–2013</span>
+        <span class="tag lang-es">Marketing Digital: Content & Community Manager — GalileoX/edX, 20h, 2019</span><span class="tag lang-en">Digital Marketing: Content & Community Manager — GalileoX/edX, 20h, 2019</span>
+        <span class="tag lang-es">Facebook Ads: Publicidad en Facebook — GalileoX/edX, 20h, 2019</span><span class="tag lang-en">Facebook Ads: Facebook Advertising — GalileoX/edX, 20h, 2019</span>
+        <span class="tag lang-es">Servicio al Cliente — INA, 20h, 2023</span><span class="tag lang-en">Customer Service — INA, 20h, 2023</span>
+        <span class="tag lang-es">Técnicas de Coctelería Clásica — INA, 21h, 2015</span><span class="tag lang-en">Classic Cocktail Techniques — INA, 21h, 2015</span>
+        <span class="tag lang-es">Operador de Computadoras — VALPER, 80h, 2007–2008</span><span class="tag lang-en">Computer Operator — VALPER, 80h, 2007–2008</span>
+        <span class="tag lang-es">Reparación de Computadoras — VALPER, 60h, 2008</span><span class="tag lang-en">Computer Repair & Maintenance — VALPER, 60h, 2008</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PROYECTOS -->
+<section id="proyectos">
+  <div class="inner">
+    <div class="section-title"><h2 class="lang-es">Proyectos y Trabajos Realizados</h2><h2 class="lang-en">Projects & Work Portfolio</h2><div class="line"></div></div>
+    <p class="lang-es" style="text-align:center; max-width:750px; margin:0 auto 48px; color:var(--gray); font-size:17px; line-height:1.8;">A lo largo de mi carrera he creado herramientas operativas y de gestión para los sectores <strong style="color:var(--navy)">inmobiliario</strong>, <strong style="color:var(--navy)">hotelero</strong> y <strong style="color:var(--navy)">turístico</strong>. Diseño sistemas funcionales que automatizan procesos, reducen errores y le ahorran horas de trabajo a los equipos.</p>
+    <p class="lang-en" style="text-align:center; max-width:750px; margin:0 auto 48px; color:var(--gray); font-size:17px; line-height:1.8;">Throughout my career I have created operational and management tools for the <strong style="color:var(--navy)">real estate</strong>, <strong style="color:var(--navy)">hospitality</strong>, and <strong style="color:var(--navy)">tourism</strong> sectors. I design functional systems that automate processes, reduce errors, and save teams hours of work.</p>
+
+    <!-- Real Estate -->
+    <div style="background:linear-gradient(135deg, var(--navy), #0d262e); color:white; padding:32px; border-radius:16px; margin-bottom:24px;">
+      <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
+        <span class="lang-es" style="background:var(--gold); color:var(--navy); padding:6px 16px; border-radius:50px; font-size:13px; font-weight:700;">BIENES RAÍCES</span><span class="lang-en" style="background:var(--gold); color:var(--navy); padding:6px 16px; border-radius:50px; font-size:13px; font-weight:700;">REAL ESTATE</span>
+        <span style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Excel Avanzado</span>
+        <span class="lang-es" style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Automatización</span><span class="lang-en" style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Automation</span>
+        <span class="lang-es" style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Base de Datos</span><span class="lang-en" style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Database</span>
+      </div>
+      <h3 class="lang-es" style="font-size:26px; margin-bottom:12px;">Paradise Real Estate — Suite de Gestión Inmobiliaria</h3><h3 class="lang-en" style="font-size:26px; margin-bottom:12px;">Paradise Real Estate — Real Estate Management Suite</h3>
+      <p class="lang-es" style="color:rgba(255,255,255,.8); line-height:1.7; max-width:800px;">Desarrollé para <strong style="color:var(--gold)">Paradise Real Estate</strong> un sistema integral en Excel que funciona como un CRM inmobiliario completo. Gestiona más de 30 propiedades con dueños, contratos, precios, comisiones y fechas de vencimiento. Incluye un <strong style="color:var(--gold)">algoritmo de matching</strong> que cruza propiedades con clientes asignando porcentajes de coincidencia. Incorpora un <strong style="color:var(--gold)">generador de descripciones con IA</strong> para textos de venta en español e inglés. Todo se controla desde un panel maestro sin tocar fórmulas.</p>
+      <p class="lang-en" style="color:rgba(255,255,255,.8); line-height:1.7; max-width:800px;">I developed a comprehensive Excel system for <strong style="color:var(--gold)">Paradise Real Estate</strong> that works as a complete real estate CRM. It manages 30+ properties with owners, contracts, prices, commissions, and expiration dates. Includes a <strong style="color:var(--gold)">matching algorithm</strong> that cross-references properties with clients, assigning match percentages. Features an <strong style="color:var(--gold)">AI description generator</strong> for sales copy in English and Spanish. Everything is controlled from a master panel — no formulas to touch.</p>
+    </div>
+    <div class="edu-grid">
+      <div class="edu-card"><img src="media/Captura de pantalla 2026-06-12 120913.png" alt="Portfolio" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Portafolio de Propiedades</h4><h4 class="lang-en">Property Portfolio</h4><div class="sub lang-es">Base de datos de 31 inmuebles con contratos, plazos y seguimiento</div><div class="sub lang-en">Database of 31 properties with contracts, deadlines, and tracking</div></div></div>
+      <div class="edu-card"><img src="media/Captura de pantalla 2026-06-12 120919.png" alt="Matching" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Matching Cliente-Propiedad</h4><h4 class="lang-en">Client-Property Matching</h4><div class="sub lang-es">Algoritmo que cruza necesidades del cliente con el inventario</div><div class="sub lang-en">Algorithm that matches client needs with property inventory</div></div></div>
+      <div class="edu-card"><img src="media/Captura de pantalla 2026-06-12 120849.png" alt="Control" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Ficha de Control por Propiedad</h4><h4 class="lang-en">Property Control Sheet</h4><div class="sub lang-es">Ubicación, dueño, características y finanzas automatizadas</div><div class="sub lang-en">Location, owner, features, and automated financials</div></div></div>
+      <div class="edu-card"><img src="media/Captura de pantalla 2026-06-12 120940.png" alt="Prompt Generator" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Generador de Textos con IA</h4><h4 class="lang-en">AI Text Generator</h4><div class="sub lang-es">Descripciones de venta para redes sociales en ES/EN</div><div class="sub lang-en">Sales descriptions for social media in EN/ES</div></div></div>
+      <div class="edu-card"><img src="media/Captura de pantalla 2026-06-12 120934.png" alt="Config" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Panel de Configuración Maestra</h4><h4 class="lang-en">Master Configuration Panel</h4><div class="sub lang-es">Tasas de cambio, comisiones y datos de la empresa centralizados</div><div class="sub lang-en">Exchange rates, commissions, and company data centralized</div></div></div>
+    </div>
+
+    <!-- Restaurant -->
+    <div style="background:linear-gradient(135deg, var(--navy), #0d262e); color:white; padding:32px; border-radius:16px; margin:48px 0 24px;">
+      <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
+        <span class="lang-es" style="background:var(--gold); color:var(--navy); padding:6px 16px; border-radius:50px; font-size:13px; font-weight:700;">RESTAURANTE & BAR</span><span class="lang-en" style="background:var(--gold); color:var(--navy); padding:6px 16px; border-radius:50px; font-size:13px; font-weight:700;">RESTAURANT & BAR</span>
+        <span class="lang-es" style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Control de Costos</span><span class="lang-en" style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Cost Control</span>
+        <span class="lang-es" style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Nóminas</span><span class="lang-en" style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Payroll</span>
+        <span class="lang-es" style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Cumplimiento Legal</span><span class="lang-en" style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Legal Compliance</span>
+      </div>
+      <h3 class="lang-es" style="font-size:26px; margin-bottom:12px;">Herramientas Operativas para Hotelería y Restaurantes</h3><h3 class="lang-en" style="font-size:26px; margin-bottom:12px;">Operational Tools for Hospitality & Restaurants</h3>
+      <p class="lang-es" style="color:rgba(255,255,255,.8); line-height:1.7; max-width:800px;">Para el sector de <strong style="color:var(--gold)">alimentos y bebidas</strong> desarrollé una suite de herramientas que resuelven problemas diarios. La <strong style="color:var(--gold)">calculadora de costos de coctelería</strong> fija precios automáticamente según ingredientes, tipo de cambio y margen. El <strong style="color:var(--gold)">recetario bilingüe</strong> funciona como carta profesional imprimible. El <strong style="color:var(--gold)">sistema de distribución de propinas</strong> cumple con la Ley No.10: ventas diarias, cálculo del 10%, pesos por área y redistribución automática en cortes quincenales.</p>
+      <p class="lang-en" style="color:rgba(255,255,255,.8); line-height:1.7; max-width:800px;">For the <strong style="color:var(--gold)">food & beverage</strong> sector, I developed a suite of tools that solve daily problems. The <strong style="color:var(--gold)">cocktail cost calculator</strong> automatically sets prices based on ingredients, exchange rate, and margin. The <strong style="color:var(--gold)">bilingual recipe book</strong> works as a printable professional menu. The <strong style="color:var(--gold)">tip distribution system</strong> complies with Costa Rica's Law No.10: daily sales, 10% calculation, area weights, and automatic redistribution in bi-monthly pay periods.</p>
+    </div>
+    <div class="edu-grid">
+      <div class="edu-card"><img src="media/Captura de pantalla 2026-06-12 120744.png" alt="Recetario" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Recetario de Cócteles Bilingüe</h4><h4 class="lang-en">Bilingual Cocktail Recipe Book</h4><div class="sub lang-es">Carta profesional ES/EN con recetas, preparación y función de impresión</div><div class="sub lang-en">Professional EN/ES menu with recipes, preparation, and print function</div></div></div>
+      <div class="edu-card"><img src="media/Captura de pantalla 2026-06-12 120753.png" alt="Costos" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Calculadora de Costos</h4><h4 class="lang-en">Cost Calculator</h4><div class="sub lang-es">Precios automáticos: tipo de cambio, margen, impuesto y precio final CRC/USD</div><div class="sub lang-en">Auto pricing: exchange rate, margin, tax, and final price CRC/USD</div></div></div>
+      <div class="edu-card"><img src="media/Captura de pantalla 2026-06-12 120618.png" alt="Ley 10" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Sistema de Propinas Ley No.10</h4><h4 class="lang-en">Tip Distribution System (Law No.10)</h4><div class="sub lang-es">Ventas diarias, cálculo del 10%, redistribución salón/cocina y recibos</div><div class="sub lang-en">Daily sales, 10% calculation, FOH/BOH redistribution, and receipts</div></div></div>
+      <div class="edu-card"><img src="media/Captura de pantalla 2026-06-12 120626.png" alt="Empleados" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Configuración de Personal</h4><h4 class="lang-en">Staff Configuration</h4><div class="sub lang-es">Pesos relativos por cargo y área para distribución justa</div><div class="sub lang-en">Relative weights by role and area for fair distribution</div></div></div>
+      <div class="edu-card"><img src="media/Captura de pantalla 2026-06-12 120636.png" alt="Ventas" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Registro Anual de Ventas</h4><h4 class="lang-en">Annual Sales Register</h4><div class="sub lang-es">Control diario todo el año con cortes quincenales y totales automáticos</div><div class="sub lang-en">Daily tracking year-round with bi-monthly cuts and auto totals</div></div></div>
+      <div class="edu-card"><img src="media/Captura de pantalla 2026-06-12 120643.png" alt="Propinas" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Resumen de Pago por Período</h4><h4 class="lang-en">Pay Period Summary</h4><div class="sub lang-es">Totales distribuidos por empleado, área y fecha listos para contabilidad</div><div class="sub lang-en">Totals distributed by employee, area, and date ready for accounting</div></div></div>
+    </div>
+
+    <!-- Diseño -->
+    <div style="background:linear-gradient(135deg, var(--navy), #0d262e); color:white; padding:32px; border-radius:16px; margin:48px 0 24px;">
+      <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
+        <span class="lang-es" style="background:var(--gold); color:var(--navy); padding:6px 16px; border-radius:50px; font-size:13px; font-weight:700;">DISEÑO & MARKETING</span><span class="lang-en" style="background:var(--gold); color:var(--navy); padding:6px 16px; border-radius:50px; font-size:13px; font-weight:700;">DESIGN & MARKETING</span>
+        <span style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Canva</span>
+        <span class="lang-es" style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Brochures</span>
+        <span class="lang-es" style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Redes Sociales</span><span class="lang-en" style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Social Media</span>
+        <span class="lang-es" style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Infografías</span><span class="lang-en" style="background:rgba(255,255,255,.1); padding:6px 16px; border-radius:50px; font-size:13px;">Infographics</span>
+      </div>
+      <h3 class="lang-es" style="font-size:26px; margin-bottom:12px;">Diseño Gráfico, Brochures Digitales y Material Turístico</h3><h3 class="lang-en" style="font-size:26px; margin-bottom:12px;">Graphic Design, Digital Brochures & Tourism Materials</h3>
+      <p class="lang-es" style="color:rgba(255,255,255,.8); line-height:1.7; max-width:800px;">Complemento mi trabajo operativo con <strong style="color:var(--gold)">diseño gráfico profesional en Canva</strong>. Creo brochures digitales, infografías educativas, cartas de presentación, menús y material publicitario para el sector turismo. Para el <strong style="color:var(--gold)">Parque Marino del Pacífico</strong> diseñé brochures informativos con datos de especies marinas y mensajes de conservación. Para la <strong style="color:var(--gold)">UNED</strong> desarrollé una infografía conceptual de app turística. Todo optimizado para imprimir y publicar en redes sociales.</p>
+      <p class="lang-en" style="color:rgba(255,255,255,.8); line-height:1.7; max-width:800px;">I complement my operational work with <strong style="color:var(--gold)">professional graphic design in Canva</strong>. I create digital brochures, educational infographics, cover letters, menus, and advertising materials for the tourism sector. For the <strong style="color:var(--gold)">Pacific Marine Park</strong> I designed informational brochures with marine species facts and conservation messages. For <strong style="color:var(--gold)">UNED</strong> I developed a conceptual infographic for a tourism app. All optimized for print and social media publishing.</p>
+    </div>
+    <div class="edu-grid">
+      <div class="edu-card"><img src="media/brochure_1.png" alt="Parque Marino" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Brochure: Especies del Parque Marino</h4><h4 class="lang-en">Brochure: Marine Park Species</h4><div class="sub lang-es">Material educativo con datos de tiburón gata, tortuga marina y raya</div><div class="sub lang-en">Educational material with nurse shark, sea turtle, and ray facts</div></div></div>
+      <div class="edu-card"><img src="media/brochure_2.png" alt="Normas Parque" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Brochure: Normas y Conservación</h4><h4 class="lang-en">Brochure: Rules & Conservation</h4><div class="sub lang-es">Guía para visitantes con reglas del parque y mensaje ambiental</div><div class="sub lang-en">Visitor guide with park rules and environmental message</div></div></div>
+      <div class="edu-card"><img src="media/brochure_salud.png" alt="App Turismo" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Infografía: App Explorando Destinos</h4><h4 class="lang-en">Infographic: Exploring Destinations App</h4><div class="sub lang-es">Propuesta de app turística con UX, mercado y estrategia digital. UNED.</div><div class="sub lang-en">Tourism app proposal with UX, market analysis, and digital strategy. UNED.</div></div></div>
+      <div class="edu-card"><img src="media/wine_menu.png" alt="Diseño de Menú" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Creación y Diseño de Menús</h4><h4 class="lang-en">Menu Creation & Design</h4><div class="sub lang-es">Cartas de comida y bebidas profesionales, bilingües, con precios</div><div class="sub lang-en">Professional food & drink menus, bilingual, with calculated pricing</div></div></div>
+      <div class="edu-card"><img src="media/chimaek_banner.png" alt="Banner" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Creación de Banners Publicitarios</h4><h4 class="lang-en">Advertising Banner Creation</h4><div class="sub lang-es">Piezas promocionales para redes sociales y eventos gastronómicos</div><div class="sub lang-en">Promotional pieces for social media and gastronomic events</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- CERTIFICACIONES -->
+<section id="certificaciones">
+  <div class="inner">
+    <div class="section-title"><h2 class="lang-es">Certificaciones y Títulos</h2><h2 class="lang-en">Certifications & Degrees</h2><div class="line"></div></div>
+    <div class="edu-grid">
+      <div class="edu-card"><img src="media/wfwe.jpg" alt="Diplomado UNED" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Diplomado en Gestión Turística Sostenible</h4><h4 class="lang-en">Diploma in Sustainable Tourism Management</h4><div class="sub">UNED</div><div class="date lang-es">Abril 2026</div><div class="date lang-en">April 2026</div></div></div>
+      <div class="edu-card"><img src="media/afa.jpg" alt="Bachillerato" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Bachiller en Educación Media</h4><h4 class="lang-en">High School Diploma</h4><div class="sub lang-es">Ministerio de Educación Pública</div><div class="sub lang-en">Ministry of Public Education</div><div class="date lang-es">Diciembre 2022</div><div class="date lang-en">December 2022</div></div></div>
+      <div class="edu-card"><img src="media/SEMS850934_page1.png" alt="Inglés" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Inglés Intermedio (B2)</h4><h4 class="lang-en">Intermediate English (B2)</h4><div class="sub">INA</div><div class="date lang-es">Abril 2026</div><div class="date lang-en">April 2026</div></div></div>
+      <div class="edu-card"><img src="media/Archivo_escaneado_20260524-2202 - 6.jpg" alt="Bartender" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Bartender y Salonero Profesional</h4><h4 class="lang-en">Professional Bartender & Server</h4><div class="sub lang-es">INA · 882 horas</div><div class="sub lang-en">INA · 882 hours</div><div class="date">2012 - 2013</div></div></div>
+      <div class="edu-card"><img src="media/Certificado GalileoX PCPMK01x _ edX_page1.png" alt="Content Manager" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Marketing Digital: Content & Community Manager</h4><h4 class="lang-en">Digital Marketing: Content & Community Manager</h4><div class="sub lang-es">GalileoX / edX · 20 horas</div><div class="sub lang-en">GalileoX / edX · 20 hours</div><div class="date lang-es">Septiembre 2019</div><div class="date lang-en">September 2019</div></div></div>
+      <div class="edu-card"><img src="media/Certificado GalileoX PCPMK02x _ edX (1)_page1.png" alt="Facebook Ads" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Facebook Ads: Publicidad en Facebook</h4><h4 class="lang-en">Facebook Ads: Facebook Advertising</h4><div class="sub lang-es">GalileoX / edX · 20 horas</div><div class="sub lang-en">GalileoX / edX · 20 hours</div><div class="date lang-es">Agosto 2019</div><div class="date lang-en">August 2019</div></div></div>
+      <div class="edu-card"><img src="media/Archivo_escaneado_20260524-2202 - 5.jpg" alt="Servicio" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Servicio al Cliente</h4><h4 class="lang-en">Customer Service</h4><div class="sub lang-es">INA · 20 horas</div><div class="sub lang-en">INA · 20 hours</div><div class="date lang-es">Diciembre 2023</div><div class="date lang-en">December 2023</div></div></div>
+      <div class="edu-card"><img src="media/Archivo_escaneado_20260524-2202 - 7.jpg" alt="Coctelería" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Técnicas de Coctelería Clásica</h4><h4 class="lang-en">Classic Cocktail Techniques</h4><div class="sub lang-es">INA · 21 horas</div><div class="sub lang-en">INA · 21 hours</div><div class="date lang-es">Mayo 2015</div><div class="date lang-en">May 2015</div></div></div>
+      <div class="edu-card"><img src="media/Archivo_escaneado_20260524-2202 - 3.png" alt="Operador PC" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Operador de Computadoras</h4><h4 class="lang-en">Computer Operator</h4><div class="sub lang-es">VALPER · 80 horas</div><div class="sub lang-en">VALPER · 80 hours</div><div class="date">2007 - 2008</div></div></div>
+      <div class="edu-card"><img src="media/Archivo_escaneado_20260524-2202 - 4.jpg" alt="Reparación PC" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Reparación de Computadoras</h4><h4 class="lang-en">Computer Repair & Maintenance</h4><div class="sub lang-es">VALPER · 60 horas</div><div class="sub lang-en">VALPER · 60 hours</div><div class="date">2008</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- HABILIDADES -->
+<section id="habilidades">
+  <div class="inner">
+    <div class="section-title"><h2 class="lang-es">Habilidades y Herramientas</h2><h2 class="lang-en">Skills & Tools</h2><div class="line"></div></div>
+    <div class="skills-grid">
+      <div class="skills-block">
+        <h3 class="lang-es">Habilidades Blandas</h3><h3 class="lang-en">Soft Skills</h3>
+        <div class="tag-cloud">
+          <span class="tag lang-es">Adaptabilidad</span><span class="tag lang-en">Adaptability</span>
+          <span class="tag lang-es">Aprendizaje Continuo</span><span class="tag lang-en">Continuous Learning</span>
+          <span class="tag lang-es">Proactividad</span><span class="tag lang-en">Proactivity</span>
+          <span class="tag lang-es">Orientación a Resultados</span><span class="tag lang-en">Results-Oriented</span>
+          <span class="tag lang-es">Liderazgo</span><span class="tag lang-en">Leadership</span>
+          <span class="tag lang-es">Resolución de Conflictos</span><span class="tag lang-en">Conflict Resolution</span>
+          <span class="tag lang-es">Comunicación Intercultural</span><span class="tag lang-en">Cross-Cultural Communication</span>
+          <span class="tag lang-es">Resiliencia bajo Presión</span><span class="tag lang-en">Resilience under Pressure</span>
+        </div>
+      </div>
+      <div class="skills-block">
+        <h3 class="lang-es">Habilidades Técnicas</h3><h3 class="lang-en">Technical Skills</h3>
+        <div class="tag-cloud">
+          <span class="tag lang-es">Excel Avanzado y Automatización</span><span class="tag lang-en">Advanced Excel & Spreadsheet Automation</span>
+          <span class="tag lang-es">Office 365 (Word, Excel, PowerPoint, Outlook)</span><span class="tag lang-en">Office 365 Suite</span>
+          <span class="tag lang-es">Canva y Diseño Digital</span><span class="tag lang-en">Canva & Digital Design</span>
+          <span class="tag lang-es">Google Workspace (Docs, Sheets, Drive, Gmail)</span><span class="tag lang-en">Google Workspace</span>
+          <span class="tag lang-es">Herramientas de Marketing Digital (Meta Ads, Redes Sociales)</span><span class="tag lang-en">Digital Marketing Tools (Meta Ads, Social Media)</span>
+          <span class="tag lang-es">CRM y Gestión de Bases de Datos</span><span class="tag lang-en">CRM & Database Management</span>
+          <span class="tag lang-es">Colaboración Remota (Microsoft Teams, Zoom, Skype)</span><span class="tag lang-en">Remote Collaboration (Microsoft Teams, Zoom, Skype)</span>
+          <span class="tag lang-es">Windows y Soporte Informático</span><span class="tag lang-en">Windows & IT Support</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- IDIOMAS -->
+<section style="background:var(--cream)">
+  <div class="inner">
+    <div class="section-title"><h2 class="lang-es">Idiomas</h2><h2 class="lang-en">Languages</h2><div class="line"></div></div>
+    <div class="lang-bar">
+      <div class="lang-item"><div class="level">Nativo</div><div class="name">Español</div><div class="desc lang-es">Lengua materna</div><div class="desc lang-en">Native language</div></div>
+      <div class="lang-item"><div class="level">B2</div><div class="name">English</div><div class="desc lang-es">Lectura · Escritura · Conversación · Traducción Profesional</div><div class="desc lang-en">Reading · Writing · Conversation · Professional Translation</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- DOCUMENTOS EXTRA -->
+<section id="documentos">
+  <div class="inner">
+    <div class="section-title"><h2 class="lang-es">Documentos Extra</h2><h2 class="lang-en">Additional Documents</h2><div class="line"></div></div>
+    <div class="extra-grid">
+      <div class="extra-card"><img src="media/IMG_20231102_172514.jpg" alt="Cédula frente" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Cédula de Identidad (Frente)</h4><h4 class="lang-en">ID Card (Front)</h4><div class="sub">República de Costa Rica</div></div></div>
+      <div class="extra-card"><img src="media/IMG_20231102_172520.jpg" alt="Cédula reverso" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Cédula de Identidad (Reverso)</h4><h4 class="lang-en">ID Card (Back)</h4><div class="sub lang-es">Nacimiento: 05/02/1991 · Vence: 2030</div><div class="sub lang-en">DOB: 05/02/1991 · Expires: 2030</div></div></div>
+      <div class="extra-card"><img src="media/Delincuencia_page1.png" alt="Antecedentes" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Certificación de Antecedentes Penales</h4><h4 class="lang-en">Criminal Record Certificate</h4><div class="sub lang-es">Poder Judicial · Emitido: 12/06/2026</div><div class="sub lang-en">Judicial Branch · Issued: 12/06/2026</div></div></div>
+      <div class="extra-card"><img src="media/Australian Belt Cleaning Pty. Ltd.jpeg" alt="Carta Aus" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Carta de Recomendación: Australian Belt Cleaning</h4><h4 class="lang-en">Recommendation Letter: Australian Belt Cleaning</h4><div class="sub">Mike Camphuis · Sydney, Australia · 2017</div></div></div>
+      <div class="extra-card"><img src="media/Carta_El_Lagarto_page1.png" alt="Carta Lagarto" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Carta de Recomendación: Restaurante El Lagarto</h4><h4 class="lang-en">Recommendation Letter: El Lagarto Restaurant</h4><div class="sub">Tedesco Norte · Puntarenas, Costa Rica</div></div></div>
+      <div class="extra-card"><img src="media/Letter_Recommendation_page1.png" alt="Recommendation Letter" onclick="openLightbox(this.src); showRecTwoPages(event)"><div class="info"><h4 class="lang-es">Carta de Recomendación: Paradise Real Estate</h4><h4 class="lang-en">Recommendation Letter: Paradise Real Estate</h4><div class="sub lang-es">Ashley Hawkins · Owner/Broker · 5+ años trabajando juntos</div><div class="sub lang-en">Ashley Hawkins · Owner/Broker · 5+ years working together</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- DOWNLOAD -->
+<section class="download" id="descargar">
+  <div class="inner">
+    <h2 class="lang-es">Descargar Currículum</h2><h2 class="lang-en">Download Resume</h2>
+    <div style="display:flex; flex-wrap:wrap; gap:16px; justify-content:center;">
+      <a href="media/CV_Greivin_Cordero_Solano_ES.pdf" class="btn btn-outline" download style="font-size:18px;padding:16px 36px;">📄 CV Español</a>
+      <a href="media/CV_Greivin_Cordero_Solano_EN.pdf" class="btn btn-gold" download style="font-size:18px;padding:16px 36px;">📄 CV English</a>
+    </div>
+    <p style="text-align:center; margin-top:24px; font-size:16px; color:#666; font-style:italic;">
+      <span class="lang-es">Cartas de recomendación disponibles bajo solicitud.</span>
+      <span class="lang-en">Letters of recommendation available upon request.</span>
+    </p>
+  </div>
+</section>
+
+<footer>
+  <p>© 2026 <strong>Greivin Mauricio Cordero Solano</strong> · Quepos, Puntarenas, Costa Rica · <a href="https://linkedin.com/in/greivin-cordero-solano-411084202">LinkedIn</a> · <a href="https://maucordero.github.io/portfolio">Portfolio</a></p>
+</footer>
+
+<div class="lightbox" id="lightbox">
+  <span class="close">&times;</span>
+  <span class="prev" id="lb-prev" onclick="event.stopPropagation(); changePage(-1)">&#10094;</span>
+  <img src="" alt="" id="lightbox-img" onclick="event.stopPropagation()">
+  <span class="next" id="lb-next" onclick="event.stopPropagation(); changePage(1)">&#10095;</span>
+  <div class="page-indicator" id="lb-page"></div>
+</div>
+
+<script>
+function setLang(lang) {
+  var b = document.body;
+  if (lang === 'en') { b.classList.add('en'); }
+  else { b.classList.remove('en'); }
+}
+var lbData = null, lbIdx = 0;
+function openLightbox(src) {
+  document.getElementById('lightbox-img').src = src;
+  document.getElementById('lightbox').classList.add('active');
+  document.getElementById('lb-prev').style.display = 'none';
+  document.getElementById('lb-next').style.display = 'none';
+  document.getElementById('lb-page').style.display = 'none';
+  document.body.style.overflow = 'hidden';
+  lbData = null;
+}
+function showRecTwoPages(e) {
+  var base = 'media/Letter_Recommendation_page';
+  lbData = [base + '1.png', base + '2.png'];
+  lbIdx = 0;
+  showLbPage();
+  document.getElementById('lb-prev').style.display = 'block';
+  document.getElementById('lb-next').style.display = 'block';
+  document.getElementById('lb-page').style.display = 'block';
+  document.getElementById('lightbox').classList.add('active');
+  document.body.style.overflow = 'hidden';
+  e.stopPropagation();
+}
+function showLbPage() {
+  document.getElementById('lightbox-img').src = lbData[lbIdx];
+  document.getElementById('lb-page').textContent = (lbIdx + 1) + ' / ' + lbData.length;
+}
+function changePage(d) {
+  if (!lbData) return;
+  lbIdx = (lbIdx + d + lbData.length) % lbData.length;
+  showLbPage();
+}
+document.getElementById('lightbox').addEventListener('click', function(e) {
+  if (e.target === this) { this.classList.remove('active'); document.body.style.overflow = ''; lbData = null; }
+});
+document.querySelector('.lightbox .close').addEventListener('click', function() {
+  document.getElementById('lightbox').classList.remove('active');
+  document.body.style.overflow = '';
+  lbData = null;
+});
+</script>
+</body>
+</html>
