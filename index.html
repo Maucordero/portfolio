@@ -393,7 +393,7 @@ footer a { color:var(--gold); }
       <div class="edu-card"><img src="media/brochure_1.png" alt="Parque Marino" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Brochure: Especies del Parque Marino</h4><h4 class="lang-en">Brochure: Marine Park Species</h4><div class="sub lang-es">Material educativo con datos de tiburón gata, tortuga marina y raya</div><div class="sub lang-en">Educational material with nurse shark, sea turtle, and ray facts</div></div></div>
       <div class="edu-card"><img src="media/brochure_2.png" alt="Normas Parque" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Brochure: Normas y Conservación</h4><h4 class="lang-en">Brochure: Rules & Conservation</h4><div class="sub lang-es">Guía para visitantes con reglas del parque y mensaje ambiental</div><div class="sub lang-en">Visitor guide with park rules and environmental message</div></div></div>
       <div class="edu-card"><img src="media/brochure_salud.png" alt="App Turismo" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Infografía: App Explorando Destinos</h4><h4 class="lang-en">Infographic: Exploring Destinations App</h4><div class="sub lang-es">Propuesta de app turística con UX, mercado y estrategia digital. Co-autoría con Diego Chaves. UNED.</div><div class="sub lang-en">Tourism app proposal with UX, market analysis, and digital strategy. Co-authored with Diego Chaves. UNED.</div></div></div>
-      <div class="edu-card"><img src="media/wine_menu.png" alt="Diseño de Menú" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Carta de Bebidas — Mango Moon Villa</h4><h4 class="lang-en">Drink Menu — Mango Moon Villa</h4><div class="sub lang-es">Happy hour, cócteles de autor, vinos por copa/botella, soju coreano. Manuel Antonio.</div><div class="sub lang-en">Happy hour, signature cocktails, wines by glass/bottle, Korean soju. Manuel Antonio.</div></div></div>
+      <div class="edu-card"><img src="media/wine_menu_1.png" alt="Diseño de Menú" onclick="openLightbox(this.src); showWineMenuPages(event)"><div class="info"><h4 class="lang-es">Carta de Bebidas — Mango Moon Villa</h4><h4 class="lang-en">Drink Menu — Mango Moon Villa</h4><div class="sub lang-es">Happy hour, cócteles de autor, vinos por copa/botella, soju coreano. Manuel Antonio.</div><div class="sub lang-en">Happy hour, signature cocktails, wines by glass/bottle, Korean soju. Manuel Antonio.</div></div></div>
       <div class="edu-card"><img src="media/chimaek_banner.png" alt="Banner" onclick="openLightbox(this.src)"><div class="info"><h4 class="lang-es">Banner Publicitario — Chimaek Night</h4><h4 class="lang-en">Advertising Banner — Chimaek Night</h4><div class="sub lang-es">Menú fusión coreano-mexicano: Pajun, Bulgogi Bowl, KFC. Pieza promocional.</div><div class="sub lang-en">Korean-Mexican fusion menu: Pajun, Bulgogi Bowl, KFC. Promotional design.</div></div></div>
     </div>
   </div>
@@ -526,6 +526,17 @@ function openLightbox(src) {
 function showRecTwoPages(e) {
   var base = 'media/Letter_Recommendation_page';
   lbData = [base + '1.png', base + '2.png'];
+  lbIdx = 0;
+  showLbPage();
+  document.getElementById('lb-prev').style.display = 'block';
+  document.getElementById('lb-next').style.display = 'block';
+  document.getElementById('lb-page').style.display = 'block';
+  document.getElementById('lightbox').classList.add('active');
+  document.body.style.overflow = 'hidden';
+  e.stopPropagation();
+}
+function showWineMenuPages(e) {
+  lbData = ['media/wine_menu_1.png', 'media/wine_menu_2.png'];
   lbIdx = 0;
   showLbPage();
   document.getElementById('lb-prev').style.display = 'block';
