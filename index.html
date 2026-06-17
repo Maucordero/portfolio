@@ -510,7 +510,8 @@ function setLang(lang) {
   else { b.classList.remove('en'); }
 }
 var params = new URLSearchParams(window.location.search);
-if (params.get('lang') === 'en') { setLang('en'); }
+if (params.get('lang') === 'es') { setLang('es'); }
+else { setLang('en'); }
 var lbData = null, lbIdx = 0;
 function openLightbox(src) {
   document.getElementById('lightbox-img').src = src;
