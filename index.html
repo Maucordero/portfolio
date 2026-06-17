@@ -509,6 +509,8 @@ function setLang(lang) {
   if (lang === 'en') { b.classList.add('en'); }
   else { b.classList.remove('en'); }
 }
+var params = new URLSearchParams(window.location.search);
+if (params.get('lang') === 'en') { setLang('en'); }
 var lbData = null, lbIdx = 0;
 function openLightbox(src) {
   document.getElementById('lightbox-img').src = src;
