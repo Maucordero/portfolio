@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+<title>King Quepoa Perfumería</title>
+<meta name="description" content="Perfumería árabe, diseñador internacional, nicho y aromas gourmand. Descubrí tu aroma. Pedidos por WhatsApp." />
+<meta name="theme-color" content="#0b0b0e" />
+<link rel="canonical" href="https://maucordero.github.io/portfolio/kingquepoa/" />
+
+<!-- ====== Previsualización del enlace (WhatsApp, Facebook, etc.) ======
+     IMPORTANTE: estas URLs son absolutas a propósito, apuntan a la pagina
+     publicada en GitHub Pages. Si algun dia cambia la direccion hay que
+     actualizar las 5 URLs de este bloque.                              -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="King Quepoa Perfumería" />
+<meta property="og:locale" content="es_CR" />
+<meta property="og:url" content="https://maucordero.github.io/portfolio/kingquepoa/" />
+<meta property="og:title" content="King Quepoa Perfumería · Perfumes árabes y de diseñador" />
+<meta property="og:description" content="Perfumería árabe, diseñador internacional, nicho y aromas gourmand. Descubrí tu aroma. Pedidos por WhatsApp." />
+<meta property="og:image" content="https://maucordero.github.io/portfolio/kingquepoa/media/og-image.jpg" />
+<meta property="og:image:secure_url" content="https://maucordero.github.io/portfolio/kingquepoa/media/og-image.jpg" />
+<meta property="og:image:type" content="image/jpeg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="King Quepoa Perfumería — perfumes árabes, de diseñador y nicho" />
+
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="King Quepoa Perfumería" />
+<meta name="twitter:description" content="Perfumería árabe, diseñador y nicho. Descubrí tu aroma." />
+<meta name="twitter:image" content="https://maucordero.github.io/portfolio/kingquepoa/media/og-image.jpg" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+<style>
+  :root{
+    --gold: #f0b429;
+    --wa:   #25d366;
+    --fb:   #1877f2;
+    --ig:   #e1306c;
+  }
+
+  *,*::before,*::after{ box-sizing:border-box; }
+  html,body{ height:100%; }
+
+  body{
+    margin:0;
+    overflow:hidden;                          /* SIN SCROLL */
+    min-height:100dvh;
+    display:grid;
+    justify-items:center;
+    align-content:center;
+    padding:2.5vh 16px 2.5vh;
+
+    font-family:"Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color:#fff;
+    background-color:#08080a;
+
+    /* Fondo: brillos de marca sobre negro */
+    background-image:
+      radial-gradient(115% 52% at 50% 4%,  rgba(240,180,41,.30) 0%, rgba(240,180,41,0) 62%),
+      radial-gradient(90%  45% at 14% 42%, rgba(232,72,43,.16)  0%, rgba(232,72,43,0)  70%),
+      radial-gradient(120% 55% at 50% 104%,rgba(24,119,242,.24) 0%, rgba(24,119,242,0) 72%),
+      linear-gradient(180deg, #1c1c21 0%, #131317 45%, #08080a 100%);
+  }
+
+  /* Grano sutil */
+  body::before{
+    content:"";
+    position:fixed; inset:0;
+    z-index:0;
+    pointer-events:none;
+    opacity:.13;
+    mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .sr-only{
+    position:absolute; width:1px; height:1px;
+    padding:0; margin:-1px; overflow:hidden;
+    clip:rect(0 0 0 0); white-space:nowrap; border:0;
+  }
+
+  /* Todo se reparte en vertical para llenar la pantalla */
+  main{
+    position:relative; z-index:1;
+    width:100%;
+    max-width:520px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:clamp(10px, 2.1vh, 30px);
+    text-align:center;
+  }
+
+  /* ---------- Logo ---------- */
+  .logo{
+    display:block;
+    width:auto; height:auto;
+    max-width:min(97%, 500px);
+    max-height:clamp(165px, 31vh, 330px);
+    filter:
+      drop-shadow(0 14px 34px rgba(0,0,0,.7))
+      drop-shadow(0 0 34px rgba(240,180,41,.22));
+    animation:rise .7s ease-out both;
+  }
+
+  /* ---------- Leyenda ---------- */
+  .legend{
+    margin:0;
+    font-size:clamp(15px, min(4.7vw, 2.6vh), 22px);
+    line-height:1.5;
+    color:rgba(255,255,255,.96);
+    text-shadow:0 2px 12px rgba(0,0,0,.7);
+    animation:rise .7s .06s ease-out both;
+  }
+  .legend b{ color:var(--gold); font-weight:700; }
+
+  .motto{
+    display:block;
+    margin-top:.5em;
+    color:var(--gold);
+    font-weight:600;
+    letter-spacing:.3px;
+  }
+
+  /* ---------- Indicación de clic ---------- */
+  .hint{
+    margin:0;
+    font-size:clamp(14px, min(4.4vw, 2.5vh), 21px);
+    font-weight:700;
+    letter-spacing:.2px;
+    text-shadow:0 2px 12px rgba(0,0,0,.8);
+    animation:rise .7s .1s ease-out both;
+  }
+  .arrow{
+    display:inline-block;
+    margin-left:2px;
+    font-size:1.15em;
+    animation:bounce 1.9s ease-in-out infinite;
+  }
+
+  /* ---------- Botones ---------- */
+  .links{
+    display:flex;
+    justify-content:center;
+    align-items:flex-start;
+    gap:clamp(26px, 9vw, 64px);
+    animation:rise .7s .14s ease-out both;
+  }
+
+  .btn{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:.5em;
+    min-width:74px;
+    padding:4px 2px;
+    text-decoration:none;
+    color:#fff;
+    font-size:clamp(13px, 3.8vw, 17px);
+    font-weight:600;
+    letter-spacing:.2px;
+    transition:transform .15s ease;
+    -webkit-tap-highlight-color:transparent;
+  }
+
+  .btn svg{
+    width:clamp(58px, min(20vw, 11vh), 96px);
+    height:clamp(58px, min(20vw, 11vh), 96px);
+  }
+
+  .btn span{ text-shadow:0 2px 8px rgba(0,0,0,.85); }
+
+  .btn.wa svg{ color:var(--wa); filter:drop-shadow(0 0 18px rgba(37,211,102,.6)) drop-shadow(0 3px 8px rgba(0,0,0,.6)); }
+  .btn.fb svg{ color:var(--fb); filter:drop-shadow(0 0 18px rgba(24,119,242,.6))  drop-shadow(0 3px 8px rgba(0,0,0,.6)); }
+  .btn.ig svg{ color:var(--ig); filter:drop-shadow(0 0 18px rgba(225,48,108,.6)) drop-shadow(0 3px 8px rgba(0,0,0,.6)); }
+
+  .btn:hover{ transform:translateY(-3px); }
+  .btn:active{ transform:scale(.94); }
+  .btn:focus-visible{ outline:2px solid var(--gold); outline-offset:6px; border-radius:12px; }
+
+  @keyframes rise{
+    from{ opacity:0; transform:translateY(16px); }
+    to  { opacity:1; transform:none; }
+  }
+  @keyframes bounce{
+    0%,100%{ transform:translateY(0); }
+    50%    { transform:translateY(6px); }
+  }
+
+  /* En horizontal (PC o móvil de lado) compactamos para que quepa */
+  @media (min-aspect-ratio:1/1){
+    main{ max-width:660px; gap:clamp(8px,1.8vh,18px); }
+    .logo{ max-height:26vh; }
+    .legend{ font-size:clamp(12px, 1.9vh, 15px); }
+    .hint{ font-size:clamp(12px, 1.9vh, 15px); }
+    .btn{ font-size:clamp(12px,1.9vh,15px); }
+    .btn svg{ width:clamp(44px,7vh,64px); height:clamp(44px,7vh,64px); }
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    *{ animation:none !important; transition:none !important; }
+  }
+</style>
+</head>
+<body>
+
+<h1 class="sr-only">King Quepoa Perfumería</h1>
+
+<main>
+  <img class="logo" src="media/logo.png" alt="King Quepoa Perfumería" />
+
+  <p class="legend">
+    👑 Bienvenidos a <b>King Quepoa</b>. Perfumería árabe, diseñador internacional, nicho y aromas gourmand, seleccionados para quienes buscan fragancias con carácter, elegancia y personalidad. Descubrí tu aroma y hacelo parte de vos.
+    <span class="motto">Tu esencia, tu estilo, tu reino.</span>
+  </p>
+
+  <p class="hint">Toca un ícono para contactarnos <span class="arrow">👇</span></p>
+
+  <nav class="links" aria-label="Contacto y redes">
+
+    <!-- 1. WhatsApp -->
+    <a class="btn wa"
+       href="https://wa.me/50664431076?text=Hola%2C%20vengo%20de%20la%20p%C3%A1gina%20de%20King%20Quepoa.%20Quiero%20informaci%C3%B3n%20de%20perfumes."
+       target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.5 3.5A11.8 11.8 0 0 0 12.1 0C5.6 0 .3 5.3.3 11.8c0 2.1.5 4.1 1.6 5.9L.2 24l6.5-1.7c1.7.9 3.6 1.4 5.5 1.4h.1c6.5 0 11.8-5.3 11.8-11.8 0-3.1-1.3-6.1-3.6-8.4ZM12.2 21.6c-1.7 0-3.4-.5-4.9-1.4l-.3-.2-3.6 1 1-3.5-.2-.4a9.7 9.7 0 0 1-1.5-5.2c0-5.4 4.4-9.7 9.8-9.7 2.6 0 5 1 6.8 2.9a9.6 9.6 0 0 1 2.9 6.9c0 5.4-4.4 9.7-9.8 9.7Zm5.4-7.3c-.3-.1-1.7-.9-2-.9-.3-.1-.5-.2-.7.1-.2.3-.8.9-.9 1.1-.2.2-.3.2-.6.1-.3-.1-1.2-.5-2.3-1.4-.9-.8-1.4-1.6-1.6-1.9-.2-.3 0-.5.1-.6l.5-.5c.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5 0-.1-.7-1.6-.9-2.2-.2-.5-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.3-.3.3-1 1-1 2.5s1 2.9 1.2 3.1c.1.2 2 3.1 4.9 4.3.7.3 1.2.5 1.6.6.7.2 1.3.2 1.8.1.6-.1 1.7-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.1-.3-.2-.6-.3Z"/></svg>
+      <span>WhatsApp</span>
+    </a>
+
+    <!-- 2. Facebook -->
+    <a class="btn fb"
+       href="https://www.facebook.com/kingQuepoaPerfumeria"
+       target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.69 4.53-4.69 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.89v2.25h3.33l-.53 3.49h-2.8V24C19.61 23.1 24 18.1 24 12.07Z"/></svg>
+      <span>Facebook</span>
+    </a>
+
+    <!-- 3. Instagram -->
+    <a class="btn ig"
+       href="https://instagram.com/kingquepoa_perfumeria"
+       target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.2c3.2 0 3.6 0 4.9.1 1.2.1 1.8.2 2.2.4.6.2 1 .5 1.4.9.4.4.7.8.9 1.4.2.4.3 1 .4 2.2.1 1.3.1 1.7.1 4.9s0 3.6-.1 4.9c-.1 1.2-.2 1.8-.4 2.2-.2.6-.5 1-.9 1.4-.4.4-.8.7-1.4.9-.4.2-1 .3-2.2.4-1.3.1-1.7.1-4.9.1s-3.6 0-4.9-.1c-1.2-.1-1.8-.2-2.2-.4a3.9 3.9 0 0 1-1.4-.9c-.4-.4-.7-.8-.9-1.4-.2-.4-.3-1-.4-2.2C2.2 15.6 2.2 15.2 2.2 12s0-3.6.1-4.9c.1-1.2.2-1.8.4-2.2.2-.6.5-1 .9-1.4.4-.4.8-.7 1.4-.9.4-.2 1-.3 2.2-.4C8.4 2.2 8.8 2.2 12 2.2Zm0 1.8c-3.1 0-3.5 0-4.7.1-1.1.1-1.7.2-2.1.4-.5.2-.9.4-1.2.8-.4.4-.6.7-.8 1.2-.2.4-.3 1-.4 2.1C2.7 8.5 2.7 8.9 2.7 12s0 3.5.1 4.7c.1 1.1.2 1.7.4 2.1.2.5.4.9.8 1.2.4.4.7.6 1.2.8.4.2 1 .3 2.1.4 1.2.1 1.6.1 4.7.1s3.5 0 4.7-.1c1.1-.1 1.7-.2 2.1-.4.5-.2.9-.4 1.2-.8.4-.4.6-.7.8-1.2.2-.4.3-1 .4-2.1.1-1.2.1-1.6.1-4.7s0-3.5-.1-4.7c-.1-1.1-.2-1.7-.4-2.1a3 3 0 0 0-.8-1.2 3 3 0 0 0-1.2-.8c-.4-.2-1-.3-2.1-.4-1.2-.1-1.6-.1-4.7-.1Zm0 3.1a4.9 4.9 0 1 1 0 9.8 4.9 4.9 0 0 1 0-9.8Zm0 8.1a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Zm6.2-8.3a1.1 1.1 0 1 1-2.3 0 1.1 1.1 0 0 1 2.3 0Z"/></svg>
+      <span>Instagram</span>
+    </a>
+
+  </nav>
+</main>
+
+</body>
+</html>
