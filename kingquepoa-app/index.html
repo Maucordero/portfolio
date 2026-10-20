@@ -25,7 +25,7 @@
   body{
     background:var(--bg);color:var(--text);
     font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    padding-bottom:calc(78px + env(safe-area-inset-bottom));
+    padding-bottom:calc(104px + env(safe-area-inset-bottom));
     overscroll-behavior-y:contain;
   }
   button,input,select,textarea{font:inherit;color:inherit}
@@ -225,6 +225,7 @@
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
 const VERSION = '1.3.0';
 const FOTOS = './fotos/';
+const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1' };
 
 let datos = { inventario:[], config:{}, guardado:null };
@@ -254,6 +255,14 @@ function fotoUrl(p){
   if(!f) return '';
   if(/^https?:\/\//i.test(f)) return f;
   return FOTOS + f.split('/').map(encodeURIComponent).join('/');
+}
+
+// Versión GRANDE de la foto (para la imagen que se manda por WhatsApp).
+function fotoGrandeUrl(p){
+  const f = String((p && p.foto) || '');
+  if(!f) return '';
+  if(/^https?:\/\//i.test(f)) return f;
+  return FOTOS_GRANDES + f.split('/').map(encodeURIComponent).join('/');
 }
 
 function emojiFamilia(f){  const s = norm(f);
@@ -493,6 +502,161 @@ function pintarLista(){
   });
 }
 
+/* ---------------- Imagen tipo "Info" (misma que la web) para WhatsApp ---------------- */
+function envolverTexto(ctx, texto, ancho){
+  const salida = [];
+  for(const parrafo of String(texto || '').split('\n')){
+    const palabras = parrafo.split(/\s+/).filter(Boolean);
+    if(!palabras.length){ salida.push(''); continue; }
+    let linea = '';
+    for(const w of palabras){
+      const prueba = linea ? linea + ' ' + w : w;
+      if(ctx.measureText(prueba).width > ancho && linea){ salida.push(linea); linea = w; }
+      else linea = prueba;
+    }
+    if(linea) salida.push(linea);
+  }
+  return salida;
+}
+function rrect(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+async function cargarFotoGrande(p){
+  const urls = [fotoGrandeUrl(p), fotoUrl(p)].filter(Boolean);
+  for(const u of urls){
+    try {
+      const r = await fetch(u, { cache: 'force-cache' });
+      if(!r.ok) continue;
+      const b = await r.blob();
+      if(!/^image\//.test(b.type)) continue;
+      return await createImageBitmap(b);
+    } catch(e){ /* probamos la siguiente */ }
+  }
+  return null;
+}
+// Arma la imagen blanca con la foto, el nombre, el género, los ML, el precio y "A pagos"
+// (el mismo estilo que el botón "Info" de la app de la PC).
+async function imagenInfo(p){
+  const bmp = await cargarFotoGrande(p);
+  if(!bmp) return null;
+  const W = 1080, M = 60, maxLado = 980;
+  const esc = Math.min(maxLado / bmp.width, maxLado / bmp.height, 1);
+  const iw = Math.round(bmp.width * esc), ih = Math.round(bmp.height * esc);
+  const anchoTexto = W - M * 2;
+
+  const precio = money(num(p.precio_crc));
+  const pagos = money(num(p.precio_pagos_crc));
+  const desc = String(p.descripcion || '').trim();
+  const genImg = String(p.categoria||'') === 'Hombre' ? 'Fragancia de hombre'
+               : String(p.categoria||'') === 'Mujer'  ? 'Fragancia de mujer'
+               : String(p.categoria||'') === 'Unisex' ? 'Perfume unisex' : '';
+  const mlTxt = num(p.ml) ? num(p.ml) + ' ML' : '';
+  const FUENTE = "'Segoe UI', Roboto, Arial, sans-serif";
+
+  const cm = document.createElement('canvas'); cm.width = W; cm.height = 10;
+  const mc = cm.getContext('2d');
+  mc.font = 'bold 50px ' + FUENTE;
+  const lNombre = envolverTexto(mc, p.nombre, anchoTexto);
+  mc.font = 'bold 46px ' + FUENTE;
+  const wMl = mlTxt ? Math.ceil(mc.measureText(mlTxt).width) + 64 : 0;
+  mc.font = '30px ' + FUENTE;
+  const lDesc = desc ? envolverTexto(mc, desc, anchoTexto) : [];
+
+  const hNombre = lNombre.length * 60;
+  const hGen = genImg ? 48 : 0;
+  const hMl = mlTxt ? 88 : 0;
+  const hPrecio = 92, hPagos = 52;
+  const DESC_LH = 42, DESC_GAP = 16;
+  const hDesc = lDesc.length ? 30 + lDesc.reduce((s, ln) => s + (ln ? DESC_LH : DESC_GAP), 0) : 0;
+  const H = M + ih + 34 + hNombre + hGen + hMl + 24 + hPrecio + hPagos + hDesc + M;
+
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(bmp, (W - iw) / 2, M, iw, ih);
+
+  let y = M + ih + 34;
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#171a21'; ctx.font = 'bold 50px ' + FUENTE;
+  for(const ln of lNombre){ ctx.fillText(ln, M, y); y += 60; }
+  if(genImg){
+    ctx.fillStyle = '#8a6b1e'; ctx.font = 'bold 36px ' + FUENTE;
+    ctx.fillText(genImg, M, y); y += 48;
+  }
+  if(mlTxt){
+    const bh = 74, by = y + 2;
+    ctx.fillStyle = '#c9a24b';
+    rrect(ctx, M, by, wMl, bh, 20); ctx.fill();
+    ctx.fillStyle = '#171a21'; ctx.font = 'bold 46px ' + FUENTE;
+    ctx.fillText(mlTxt, M + 32, by + 13);
+    y = by + bh + 12;
+  }
+  y += 24;
+  ctx.fillStyle = '#c9a24b'; ctx.font = 'bold 72px ' + FUENTE;
+  ctx.fillText(precio, M, y); y += 92;
+  ctx.fillStyle = '#1f7a48'; ctx.font = 'bold 34px ' + FUENTE;
+  ctx.fillText('A pagos: ' + pagos, M, y); y += 52;
+  if(lDesc.length){
+    y += 30; ctx.fillStyle = '#333a45'; ctx.font = '30px ' + FUENTE;
+    for(const ln of lDesc){
+      if(!ln){ y += DESC_GAP; continue; }
+      ctx.fillText(ln, M, y); y += DESC_LH;
+    }
+  }
+  return await new Promise(r => cv.toBlob(r, 'image/png'));
+}
+
+// Muestra la imagen para guardarla a mano (cuando el teléfono no deja compartir ni copiar).
+function mostrarImagenParaGuardar(blob){
+  const url = URL.createObjectURL(blob);
+  const w = document.createElement('div');
+  w.className = 'hoja-fondo';
+  w.style.zIndex = 70;
+  w.innerHTML = `<div class="hoja" style="text-align:center">
+    <div class="agarre"></div>
+    <h2>Imagen lista</h2>
+    <div class="sub">Mantené presionada la imagen → “Guardar en Fotos” o “Compartir”.</div>
+    <img src="${url}" style="width:100%;border-radius:12px;display:block">
+    <div class="acciones"><button class="btn ghost" id="cerrar-img">Cerrar</button></div>
+  </div>`;
+  document.body.appendChild(w);
+  w.querySelector('#cerrar-img').onclick = () => { URL.revokeObjectURL(url); w.remove(); };
+}
+
+// Envía la imagen: 1) compartir del teléfono  2) portapapeles  3) mostrarla para guardar.
+async function enviarImagenWhatsApp(p){
+  toast('🖼 Armando la imagen…');
+  let blob = null;
+  try { blob = await imagenInfo(p); } catch(e){ blob = null; }
+  if(!blob){
+    await copiarTexto(textoInfo(p), '📋 Sin foto: copié el texto');
+    return;
+  }
+  const file = new File([blob], 'king-quepoa-' + String(p.numero || p.id) + '.png', { type: 'image/png' });
+  if(navigator.canShare && navigator.canShare({ files: [file] })){
+    try {
+      await navigator.share({ files: [file] });
+      return;
+    } catch(e){
+      if(e && e.name === 'AbortError') return;   // el usuario canceló: no hacemos nada más
+    }
+  }
+  if(navigator.clipboard && window.ClipboardItem && window.isSecureContext){
+    try {
+      await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+      toast('🖼 Imagen copiada — pegala en WhatsApp');
+      return;
+    } catch(e){ /* seguimos con el plan C */ }
+  }
+  mostrarImagenParaGuardar(blob);
+}
+
 function abrirProducto(p){
   const st = num(p.stock);
   const wrap = $('#hoja-wrap');
@@ -513,7 +677,7 @@ function abrirProducto(p){
       </div>
       ${p.descripcion ? `<div class="cuerpo">${esc(p.descripcion)}</div>` : ''}
       <div class="acciones">
-        <button class="btn verde" id="h-wa">📲 Enviar por WhatsApp</button>
+        <button class="btn verde" id="h-wa">📲 Enviar imagen por WhatsApp</button>
         <button class="btn ghost" id="h-copiar">📋 Copiar el texto</button>
         <button class="btn ghost" id="h-cerrar">Cerrar</button>
       </div>
@@ -524,7 +688,7 @@ function abrirProducto(p){
   $('#h-cerrar').onclick = cerrar;
   $('.hoja-fondo').addEventListener('click', e => { if(e.target.classList.contains('hoja-fondo')) cerrar(); });
   $('#h-copiar').onclick = () => copiar(textoInfo(p), 'Texto copiado');
-  $('#h-wa').onclick = () => abrirWhatsApp(textoInfo(p), '');
+  $('#h-wa').onclick = () => enviarImagenWhatsApp(p);
 }
 
 /* ---------------- cobros (clientes que deben) ---------------- */
