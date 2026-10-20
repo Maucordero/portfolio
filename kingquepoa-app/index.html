@@ -21,11 +21,11 @@
     --gold:#c9a24b;--gold2:#e6c87e;--green:#3ecf8e;--red:#f0575d;--blue:#5aa9ff;
     --r:14px;--r-sm:10px;
   }
-  html,body{margin:0;height:100%}
+  html,body{margin:0;min-height:100%}
   body{
     background:var(--bg);color:var(--text);
     font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    padding-bottom:calc(104px + env(safe-area-inset-bottom));
+    padding-bottom:calc(110px + env(safe-area-inset-bottom));
     overscroll-behavior-y:contain;
   }
   button,input,select,textarea{font:inherit;color:inherit}
@@ -49,7 +49,7 @@
   }
   .icono:active{background:var(--panel3)}
 
-  main{padding:14px 14px 8px}
+  main{padding:14px 14px 22px}
   .titulo{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px}
 
   .buscador{position:relative;margin-bottom:10px}
@@ -629,7 +629,7 @@ function mostrarImagenParaGuardar(blob){
   w.querySelector('#cerrar-img').onclick = () => { URL.revokeObjectURL(url); w.remove(); };
 }
 
-// Envía la imagen: 1) compartir del teléfono  2) portapapeles  3) mostrarla para guardar.
+// Envía la imagen SIN ningún link: 1) portapapeles  2) guardarla para mandarla como foto.
 async function enviarImagenWhatsApp(p){
   toast('🖼 Armando la imagen…');
   let blob = null;
@@ -638,23 +638,30 @@ async function enviarImagenWhatsApp(p){
     await copiarTexto(textoInfo(p), '📋 Sin foto: copié el texto');
     return;
   }
-  const file = new File([blob], 'king-quepoa-' + String(p.numero || p.id) + '.png', { type: 'image/png' });
-  if(navigator.canShare && navigator.canShare({ files: [file] })){
-    try {
-      await navigator.share({ files: [file] });
-      return;
-    } catch(e){
-      if(e && e.name === 'AbortError') return;   // el usuario canceló: no hacemos nada más
-    }
-  }
   if(navigator.clipboard && window.ClipboardItem && window.isSecureContext){
     try {
       await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
-      toast('🖼 Imagen copiada — pegala en WhatsApp');
+      toast('🖼 Imagen copiada — abrí WhatsApp y pegala');
       return;
-    } catch(e){ /* seguimos con el plan C */ }
+    } catch(e){ /* el teléfono no deja copiar imágenes: la guardamos */ }
   }
-  mostrarImagenParaGuardar(blob);
+  guardarImagenEnTelefono(blob);
+}
+
+// Guarda la imagen en el teléfono (o la muestra para guardarla a mano). Nunca manda el link.
+function guardarImagenEnTelefono(blob){
+  const esIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if(esIOS){ mostrarImagenParaGuardar(blob); return; }
+  try {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'king-quepoa-perfume.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast('🖼 Imagen guardada — mandala como foto en WhatsApp');
+  } catch(e){
+    mostrarImagenParaGuardar(blob);
+  }
 }
 
 function abrirProducto(p){
