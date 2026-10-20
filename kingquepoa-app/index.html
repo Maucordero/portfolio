@@ -550,7 +550,7 @@ async function cargarCobros(mostrar){
     if(vista === 'cobros') render();
     if(mostrar) toast('Cobros actualizados');
   } catch(e) {
-    cobrosError = /Acci[oó]n desconocida/i.test(e.message)
+    cobrosError = /desconocida/i.test(e.message)
       ? 'Falta actualizar el script de Google (versión 1.1).'
       : e.message;
     if(vista === 'cobros') render();
@@ -756,7 +756,7 @@ function pintarListaNotas(){
 
 function mensajeGoogle(e){
   const m = String((e && e.message) || e || '');
-  if(/Acci[oó]n desconocida/i.test(m)) return 'Falta actualizar el script de Google (versión 1.2).';
+  if(/desconocida/i.test(m)) return 'Falta actualizar el script de Google (versión 1.2).';
   return m;
 }
 
