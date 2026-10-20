@@ -901,6 +901,15 @@ $('#btn-sync').addEventListener('click', () => sincronizar(false));
 
 window.addEventListener('online', () => { pintarEstado(); subirCola(); });
 window.addEventListener('offline', () => pintarEstado(true));
+window.addEventListener('hashchange', () => {
+  const h = location.hash.replace('#','');
+  if(['stock','cobros','anotar','catalogo','ajustes'].includes(h) && h !== vista){
+    vista = h;
+    render();
+    if(h === 'cobros') cargarCobros(false);
+    window.scrollTo(0,0);
+  }
+});
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   instalarEvento = e;
