@@ -206,7 +206,7 @@
 <nav>
   <button data-v="stock" class="activo"><i>🧴</i><span>Stock</span></button>
   <button data-v="cobros"><i>💰</i><span>Cobros</span></button>
-  <button data-v="anotar"><i>📝</i><span>Anotar</span></button>
+  <button data-v="notas"><i>📝</i><span>Notas</span></button>
   <button data-v="catalogo"><i>📋</i><span>Catálogo</span></button>
   <button data-v="ajustes"><i>⚙️</i><span>Ajustes</span></button>
 </nav>
@@ -222,14 +222,14 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.1.0';
-const LS = { datos:'kq_datos_v1', token:'kq_token_v1', cola:'kq_cola_v1', cobros:'kq_cobros_v1' };
+const VERSION = '1.2.0';
+const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1' };
 
 let datos = { inventario:[], config:{}, guardado:null };
 let cobros = [];
 let vista = 'stock';
 let filtro = { q:'', cat:'Todos', soloStock:false };
-let cola = [];
+let notas = [];
 let instalarEvento = null;
 
 /* ---------------- utilidades ---------------- */
@@ -411,7 +411,7 @@ function render(){
   const app = $('#app');
   if(vista === 'stock') return pintarStock(app);
   if(vista === 'cobros') return pintarCobros(app);
-  if(vista === 'anotar') return pintarAnotar(app);
+  if(vista === 'notas') return pintarNotas(app);
   if(vista === 'catalogo') return pintarCatalogo(app);
   if(vista === 'ajustes') return pintarAjustes(app);
 }
@@ -647,140 +647,157 @@ function pintarCobros(app){
   pintar();
 }
 
-/* ---------------- anotar ---------------- */
-let tipoMov = 'abono';
+/* ---------------- notas (avisos para la PC) ---------------- */
+let notas = [];
 
-function pintarAnotar(app){
-  const t = token();
-  const perfumes = datos.inventario;
+function guardarNotas(){
+  guardarLS(LS.notas, notas);
+}
+
+function pintarNotas(app){
+  const pendientes = notas.filter(n => !n.subida).length;
   app.innerHTML = `
-    ${t ? '' : `<div class="aviso">⚠️ Falta la clave en <b>Ajustes</b>. Podés anotar igual: queda guardado en el teléfono y se sube después.</div>`}
-    <div class="seg" id="seg-tipo">
-      <button data-t="abono" class="${tipoMov==='abono'?'on':''}">💰 Abono</button>
-      <button data-t="venta" class="${tipoMov==='venta'?'on':''}">🛍 Venta</button>
-      <button data-t="nota"  class="${tipoMov==='nota'?'on':''}">📝 Nota</button>
-    </div>
-    <form id="f-mov" autocomplete="off">
-      <label class="f"><span>Cliente</span><input id="m-cliente" placeholder="Nombre y apellido"></label>
-      <div class="dos">
-        <label class="f"><span>Teléfono</span><input id="m-tel" inputmode="tel" placeholder="88888888"></label>
-        <label class="f" id="f-monto"><span>Monto ₡</span><input id="m-monto" inputmode="numeric" placeholder="10000"></label>
+    <div class="card">
+      <h3>Nueva nota</h3>
+      <p class="hint" style="margin-bottom:10px">Queda guardada en el teléfono. <b>No</b> toca el inventario ni las ventas.</p>
+      <textarea id="n-texto" rows="4" placeholder="Ej: David abonó ₡10.000, revisar el 1…"></textarea>
+      <div style="display:grid;gap:8px;margin-top:10px">
+        <button class="btn" id="n-guardar">Guardar nota</button>
       </div>
-      <label class="f" id="f-perfume"><span>Perfume</span>
-        <select id="m-perfume">
-          <option value="">— Elegir —</option>
-          ${perfumes.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}${num(p.stock)<=0?' (agotado)':''}</option>`).join('')}
-        </select>
-      </label>
-      <label class="f" id="f-cant"><span>Cantidad</span><input id="m-cant" inputmode="numeric" value="1"></label>
-      <label class="f"><span>Nota</span><textarea id="m-nota" placeholder="Ej: abonó por SINPE, pasa el 1 a pagar el resto…"></textarea></label>
-      <button class="btn" type="submit">Guardar</button>
-    </form>
-    <div class="titulo">Últimos registros</div>
-    <div class="lista-mini" id="m-lista"></div>`;
+    </div>
 
-  $('#seg-tipo').addEventListener('click', e => {
-    const b = e.target.closest('button'); if(!b) return;
-    tipoMov = b.dataset.t;
-    render();
-  });
-
-  const mostrar = () => {
-    $('#f-monto').classList.toggle('oculto', tipoMov === 'nota');
-    $('#f-perfume').classList.toggle('oculto', tipoMov === 'nota');
-    $('#f-cant').classList.toggle('oculto', tipoMov !== 'venta');
-  };
-  mostrar();
-
-  $('#m-perfume').addEventListener('change', e => {
-    if(tipoMov !== 'venta') return;
-    const p = perfumes.find(x => String(x.id) === String(e.target.value));
-    if(p){
-      const c = Math.max(1, num($('#m-cant').value) || 1);
-      $('#m-monto').value = Math.round(num(p.precio_crc) * c);
-    }
-  });
-
-  $('#f-mov').addEventListener('submit', async ev => {
-    ev.preventDefault();
-    const payload = {
-      tipo: tipoMov,
-      cliente: $('#m-cliente').value.trim(),
-      telefono: $('#m-tel').value.trim(),
-      nota: $('#m-nota').value.trim(),
-      dispositivo: 'app-celular'
-    };
-    const pid = $('#m-perfume').value;
-    if(pid){
-      const p = perfumes.find(x => String(x.id) === String(pid));
-      if(p){ payload.perfume_id = p.id; payload.perfume = p.nombre; }
-    }
-    if(tipoMov !== 'nota') payload.monto = num($('#m-monto').value);
-    if(tipoMov === 'venta') payload.cantidad = Math.max(1, num($('#m-cant').value));
-
-    if(tipoMov === 'abono' && !(payload.monto > 0)) return toast('Poné el monto del abono', 'error');
-    if(tipoMov === 'venta' && !payload.perfume) return toast('Elegí el perfume vendido', 'error');
-    if(tipoMov === 'nota' && !payload.nota) return toast('Escribí la nota', 'error');
-    if(!payload.cliente && !payload.nota) return toast('Poné el cliente o una nota', 'error');
-
-    const item = { local: Date.now() + '-' + Math.random().toString(36).slice(2,6), ts: Date.now(), payload, subido:false };
-    cola.push(item);
-    guardarCola();
-    render();
-    toast('Guardado en el teléfono');
-    subirCola();
-  });
-
-  pintarCola();
-}
-
-function pintarCola(){
-  const cont = $('#m-lista');
-  if(!cont) return;
-  if(!cola.length){ cont.innerHTML = `<div class="hint">Todavía no anotaste nada.</div>`; return; }
-  const ult = cola.slice().reverse().slice(0, 12);
-  cont.innerHTML = ult.map(i => {
-    const p = i.payload;
-    const titulo = p.tipo === 'abono' ? ('Abono ' + money(p.monto))
-      : p.tipo === 'venta' ? ('Venta · ' + (p.perfume || 'perfume'))
-      : 'Nota';
-    const detalle = [p.cliente, p.perfume && p.tipo !== 'venta' ? p.perfume : '', p.nota].filter(Boolean).join(' · ');
-    const fecha = new Date(i.ts).toLocaleString('es-CR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
-    return `<div class="mini">
-      <div class="c"><b>${esc(titulo)}</b><small>${esc(detalle || '—')} · ${esc(fecha)}</small></div>
-      <span class="estado-mini ${i.subido?'ok':'pend'}">${i.subido ? '✅' : '⏳'}</span>
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <h3 style="flex:1;margin:0">Mis notas</h3>
+        ${pendientes ? `<button class="btn ghost sm" id="n-subir-todas">☁️ Subir ${pendientes}</button>` : ""}
+      </div>
+      <div id="n-lista"></div>
     </div>`;
-  }).join('') + (cola.some(i => !i.subido) ? `<button class="btn ghost sm" id="btn-subir" style="width:100%">⬆ Subir pendientes</button>` : '');
-  const b = $('#btn-subir');
-  if(b) b.onclick = subirCola;
-}
 
-function guardarCola(){
-  try { localStorage.setItem(LS.cola, JSON.stringify(cola)); } catch(e){}
-}
+  $('#n-guardar').onclick = () => {
+    const t = $('#n-texto').value.trim();
+    if(!t) return toast('Escribí la nota primero', 'error');
+    notas.unshift({
+      local: Date.now() + '-' + Math.random().toString(36).slice(2,6),
+      ts: Date.now(),
+      texto: t,
+      subida: false,
+      idRemoto: null
+    });
+    guardarNotas();
+    render();
+    toast('Nota guardada en el teléfono');
+  };
 
-async function subirCola(){
-  const pend = cola.filter(i => !i.subido);
-  if(!pend.length) return;
-  const t = token();
-  if(!t){ toast('Falta la clave en Ajustes', 'error'); return; }
-  let ok = 0, error = '';
-  for(const item of pend){
-    try {
-      const r = await fetch(API, {
-        method:'POST',
-        headers:{ 'Content-Type':'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action:'movimiento', token:t, ...item.payload })
-      });
-      const j = await r.json();
-      if(j && j.ok){ item.subido = true; item.id = j.id; ok++; }
-      else { error = (j && j.error) || 'Google rechazó el registro'; }
-    } catch(e){ error = 'Sin conexión'; break; }
+  if(pendientes){
+    $('#n-subir-todas').onclick = async () => {
+      const t = token();
+      if(!t) return toast('Poné la clave en Ajustes', 'error');
+      let ok = 0;
+      let ultimoError = null;
+      for(const n of notas.filter(x => !x.subida)){
+        try {
+          const r = await fetch(API, {
+            method:'POST',
+            headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action:'aviso', token:t, texto:n.texto, fecha:new Date(n.ts).toISOString(), dispositivo:'app-celular' })
+          });
+          const j = await r.json();
+          if(j && j.ok){ n.subida = true; n.idRemoto = j.id; ok++; }
+          else ultimoError = (j && j.error) || 'Google rechazó la nota';
+        } catch(e){ ultimoError = e; break; }
+      }
+      guardarNotas();
+      render();
+      toast(ok ? `☁️ ${ok} nota${ok===1?'':'s'} subida${ok===1?'':'s'}` : 'No se pudo subir: ' + mensajeGoogle(ultimoError), ok ? '' : 'error');
+    };
   }
-  guardarCola();
-  if(vista === 'anotar') render();
-  if(ok) toast(ok === 1 ? 'Subido a Google' : ok + ' registros subidos');
-  if(error && !ok) toast(error, 'error');
+
+  pintarListaNotas();
+}
+
+function pintarListaNotas(){
+  const cont = $('#n-lista');
+  if(!cont) return;
+  if(!notas.length){
+    cont.innerHTML = `<div class="hint">Todavía no escribiste notas.</div>`;
+    return;
+  }
+  cont.innerHTML = notas.map((n, i) => {
+    const f = new Date(n.ts).toLocaleString('es-CR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    return `<div class="mini" style="align-items:flex-start">
+      <div class="c">
+        <b style="white-space:pre-wrap;font-weight:500;font-size:13.5px">${esc(n.texto)}</b>
+        <small>${esc(f)} · ${n.subida ? '✅ en Google' : '⏳ solo en el teléfono'}</small>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn ghost sm" data-wa="${i}" title="Mandar a mi WhatsApp">📲</button>
+        ${n.subida ? "" : `<button class="btn ghost sm" data-subir="${i}" title="Subir a Google">☁️</button>`}
+        <button class="btn ghost sm" data-borrar="${i}" title="Borrar">🗑</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  cont.querySelectorAll("[data-wa]").forEach(b => {
+    b.onclick = () => enviarNotaWhatsApp(notas[Number(b.dataset.wa)]);
+  });
+  cont.querySelectorAll("[data-subir]").forEach(b => {
+    b.onclick = () => subirNota(notas[Number(b.dataset.subir)], b);
+  });
+  cont.querySelectorAll("[data-borrar]").forEach(b => {
+    b.onclick = () => {
+      const i = Number(b.dataset.borrar);
+      if(!confirm('¿Borrar esta nota del teléfono?')) return;
+      notas.splice(i, 1);
+      guardarNotas();
+      render();
+    };
+  });
+}
+
+function mensajeGoogle(e){
+  const m = String((e && e.message) || e || '');
+  if(/Acci[oó]n desconocida/i.test(m)) return 'Falta actualizar el script de Google (versión 1.2).';
+  return m;
+}
+
+function numeroNegocio(){
+  const n = String((datos.config && datos.config.wa_numero) || '').replace(/\D/g,'');
+  return n || '50664431076';
+}
+
+function enviarNotaWhatsApp(n){
+  if(!n) return;
+  const f = new Date(n.ts).toLocaleString('es-CR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+  const txt = `📝 Recordatorio · King Quepoa\n\n${n.texto}\n\n${f}`;
+  abrirWhatsApp(txt, numeroNegocio());
+}
+
+async function subirNota(n, btn){
+  if(!n) return;
+  const t = token();
+  if(!t) return toast('Poné la clave en Ajustes', 'error');
+  const texto = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    const r = await fetch(API, {
+      method:'POST',
+      headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action:'aviso', token:t, texto:n.texto, fecha:new Date(n.ts).toISOString(), dispositivo:'app-celular' })
+    });
+    const j = await r.json();
+    if(!j || !j.ok) throw new Error((j && j.error) || 'No se pudo subir');
+    n.subida = true;
+    n.idRemoto = j.id;
+    guardarNotas();
+    render();
+    toast('☁️ Nota subida a Google');
+  } catch(e){
+    toast(mensajeGoogle(e), 'error');
+    btn.disabled = false;
+    btn.textContent = texto;
+  }
 }
 
 /* ---------------- catálogo ---------------- */
@@ -806,7 +823,7 @@ function pintarAjustes(app){
   app.innerHTML = `
     <div class="card">
       <h3>Clave de Google</h3>
-      <p class="hint" style="margin-bottom:10px">Se pega una sola vez en este teléfono. Sirve para subir abonos y notas a la hoja.</p>
+      <p class="hint" style="margin-bottom:10px">Se pega una sola vez en este teléfono. Sirve para ver los saldos y subir las notas a la hoja.</p>
       <label class="f"><span>Clave (token)</span><input id="a-token" type="password" placeholder="Pegala acá" autocomplete="new-password"></label>
       <div style="display:grid;gap:8px">
         <button class="btn" id="a-guardar">Guardar clave</button>
@@ -827,10 +844,10 @@ function pintarAjustes(app){
     <div class="card">
       <h3>Cómo funciona</h3>
       <p class="hint">
-        La PC es la que manda: cuando cargás o cambiás un perfume, tocás
-        <b>☁️ Publicar a Google</b> y esta app lo ve al actualizar.<br><br>
-        Lo que anotás acá (abonos, ventas, notas) va a la pestaña
-        <b>MOVIMIENTOS</b> y después lo aplicás en la PC.
+        Esta app <b>solo mira y anota</b>. No cambia stock, ventas ni precios: eso se hace en la PC.<br><br>
+        La PC publica sola los cambios, y esta app los ve al abrir o al tocar ⟳.<br><br>
+        Las notas que escribís acá quedan en el teléfono y las subís a la pestaña
+        <b>AVISOS</b>. La PC las muestra al abrir, para que las revises.
       </p>
     </div>
 
@@ -845,7 +862,7 @@ function pintarAjustes(app){
     const t = $('#a-token').value.trim();
     guardarToken(t);
     toast(t ? 'Clave guardada' : 'Clave borrada');
-    subirCola();
+    if(t && vista === 'cobros') cargarCobros(false);
   };
 
   $('#a-probar').onclick = async () => {
@@ -875,11 +892,11 @@ function pintarAjustes(app){
     if(!confirm('Borra el catálogo y los registros guardados en este teléfono. No borra nada en Google.')) return;
     try {
       localStorage.removeItem(LS.datos);
-      localStorage.removeItem(LS.cola);
+      localStorage.removeItem(LS.notas);
       localStorage.removeItem(LS.cobros);
     } catch(e){}
     datos = { inventario:[], config:{}, guardado:null };
-    cola = [];
+    notas = [];
     cobros = [];
     toast('Datos borrados');
     sincronizar(false);
@@ -899,11 +916,11 @@ document.querySelectorAll('nav button').forEach(b => {
 });
 $('#btn-sync').addEventListener('click', () => sincronizar(false));
 
-window.addEventListener('online', () => { pintarEstado(); subirCola(); });
+window.addEventListener('online', () => { pintarEstado(); });
 window.addEventListener('offline', () => pintarEstado(true));
 window.addEventListener('hashchange', () => {
   const h = location.hash.replace('#','');
-  if(['stock','cobros','anotar','catalogo','ajustes'].includes(h) && h !== vista){
+  if(['stock','cobros','notas','catalogo','ajustes'].includes(h) && h !== vista){
     vista = h;
     render();
     if(h === 'cobros') cargarCobros(false);
@@ -922,8 +939,8 @@ window.addEventListener('beforeinstallprompt', e => {
   if(guardado && Array.isArray(guardado.inventario)){
     datos = guardado;
   }
-  cola = leerLS(LS.cola, []);
-  if(!Array.isArray(cola)) cola = [];
+  notas = leerLS(LS.notas, []);
+  if(!Array.isArray(notas)) notas = [];
 
   const gc = leerLS(LS.cobros, null);
   if(gc && Array.isArray(gc.cobros)) cobros = gc.cobros;
@@ -942,13 +959,12 @@ window.addEventListener('beforeinstallprompt', e => {
   } catch(e){}
 
   const h = location.hash.replace('#','');
-  if(['stock','cobros','anotar','catalogo','ajustes'].includes(h)) vista = h;
+  if(['stock','cobros','notas','catalogo','ajustes'].includes(h)) vista = h;
 
   render();
   pintarEstado(!navigator.onLine);
 
   sincronizar(true).then(() => {
-    if(cola.some(i => !i.subido)) subirCola();
     if(token()) cargarCobros(false);
   });
 
