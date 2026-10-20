@@ -858,6 +858,7 @@ function pintarAjustes(app){
       <div style="display:grid;gap:8px;margin-top:10px">
         <button class="btn ghost" id="a-actualizar">⟳ Actualizar inventario</button>
         <button class="btn ghost" id="a-instarar" ${instalarEvento?'':'hidden'}>📲 Instalar en el teléfono</button>
+        <p class="hint" id="a-instalar-tip" style="margin-top:2px"></p>
         <button class="btn rojo" id="a-limpiar">Borrar datos guardados</button>
       </div>
     </div>
@@ -875,6 +876,15 @@ function pintarAjustes(app){
     <p class="hint" style="text-align:center;padding:8px 0 4px">Versión ${VERSION}</p>`;
 
   $('#a-token').value = token();
+  const esIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const tip = $('#a-instalar-tip');
+  if(tip){
+    tip.textContent = instalarEvento
+      ? 'Tocá el botón y confirmá. Queda como una app más.'
+      : (esIOS
+          ? 'En iPhone: tocá Compartir (⬆️) abajo y elegí "Agregar a pantalla de inicio".'
+          : 'En Chrome: menú ⋮ (arriba a la derecha) → "Instalar aplicación" o "Agregar a pantalla principal".');
+  }
   $('#a-datos').textContent = datos.guardado
     ? (datos.inventario.length + ' perfumes · actualizado ' + hace(datos.guardado))
     : 'Sin datos guardados todavía.';
