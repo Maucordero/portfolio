@@ -629,6 +629,19 @@ function mostrarImagenParaGuardar(blob){
   w.querySelector('#cerrar-img').onclick = () => { URL.revokeObjectURL(url); w.remove(); };
 }
 
+// Entrega una imagen SIN link: portapapeles → guardar/mostrar. Devuelve true si la copió.
+async function entregarImagen(blob, mensaje){
+  if(navigator.clipboard && window.ClipboardItem && window.isSecureContext){
+    try {
+      await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+      toast(mensaje || '🖼 Imagen copiada — pegala en WhatsApp');
+      return true;
+    } catch(e){ /* el teléfono no deja copiar imágenes: la guardamos */ }
+  }
+  guardarImagenEnTelefono(blob);
+  return false;
+}
+
 // Envía la imagen SIN ningún link: 1) portapapeles  2) guardarla para mandarla como foto.
 async function enviarImagenWhatsApp(p){
   toast('🖼 Armando la imagen…');
@@ -638,14 +651,7 @@ async function enviarImagenWhatsApp(p){
     await copiarTexto(textoInfo(p), '📋 Sin foto: copié el texto');
     return;
   }
-  if(navigator.clipboard && window.ClipboardItem && window.isSecureContext){
-    try {
-      await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
-      toast('🖼 Imagen copiada — abrí WhatsApp y pegala');
-      return;
-    } catch(e){ /* el teléfono no deja copiar imágenes: la guardamos */ }
-  }
-  guardarImagenEnTelefono(blob);
+  await entregarImagen(blob, '🖼 Imagen copiada — abrí WhatsApp y pegala');
 }
 
 // Guarda la imagen en el teléfono (o la muestra para guardarla a mano). Nunca manda el link.
@@ -662,6 +668,121 @@ function guardarImagenEnTelefono(blob){
   } catch(e){
     mostrarImagenParaGuardar(blob);
   }
+}
+
+// Recordatorio de pago como IMAGEN (mismo estilo que la web): logo, cliente, producto,
+// próximo abono con fecha y monto, saldo y datos de SINPE.
+async function imagenCobro(c){
+  const cfg = datos.config || {};
+  const W = 1080, M = 80, cx = W / 2;
+  const FUENTE = "'Segoe UI', Roboto, Arial, sans-serif";
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = 6000;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, cv.height);
+  ctx.textBaseline = 'top'; ctx.textAlign = 'center';
+  let y = 46;
+
+  // Logo
+  try {
+    const r = await fetch('./logo.png', { cache: 'force-cache' });
+    if(r.ok){
+      const logo = await createImageBitmap(await r.blob());
+      const lw = 300, lh = Math.round(lw * logo.height / logo.width);
+      ctx.drawImage(logo, (W - lw) / 2, y, lw, lh);
+      y += lh + 30;
+    }
+  } catch(e){ /* sin logo, sigue igual */ }
+
+  const atrasado = num(c.atrasado) === 1;
+  const fecha = c.proximo ? String(c.proximo).slice(0,10).split('-').reverse().join('/') : '';
+  const pendientes = Math.max(num(c.pendientes), 1);
+  const monto = num(c.proximo_monto) > 0 ? num(c.proximo_monto) : Math.round(num(c.saldo) / pendientes);
+
+  // Título
+  ctx.fillStyle = atrasado ? '#c0392b' : '#8a6b1e';
+  ctx.font = 'bold 38px ' + FUENTE;
+  ctx.fillText(atrasado ? 'ABONO VENCIDO' : 'RECORDATORIO DE ABONO', cx, y);
+  y += 54;
+
+  // Cliente
+  ctx.fillStyle = '#171a21'; ctx.font = 'bold 44px ' + FUENTE;
+  for(const ln of envolverTexto(ctx, c.cliente || '', W - M * 2)){ ctx.fillText(ln, cx, y); y += 52; }
+  y += 6;
+
+  // Producto
+  const prod = String(c.producto || '') + (num(c.cantidad) > 1 ? ' × ' + num(c.cantidad) : '');
+  ctx.fillStyle = '#8a8f99'; ctx.font = '28px ' + FUENTE;
+  for(const ln of envolverTexto(ctx, prod, W - M * 2)){ ctx.fillText(ln, cx, y); y += 34; }
+  y += 22;
+
+  // Recuadro del próximo abono + saldo
+  const boxW = 560, boxH = 176, bx = M + boxW / 2;
+  ctx.fillStyle = '#fbf4df'; ctx.fillRect(M, y, boxW, boxH);
+  ctx.strokeStyle = '#ecd9a8'; ctx.lineWidth = 3; ctx.strokeRect(M, y, boxW, boxH);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#8a6b1e'; ctx.font = 'bold 24px ' + FUENTE;
+  ctx.fillText(fecha ? 'TU PRÓXIMO ABONO' : 'SALDO PENDIENTE', bx, y + 20);
+  if(fecha){
+    ctx.fillStyle = '#171a21'; ctx.font = 'bold 34px ' + FUENTE;
+    ctx.fillText(fecha, bx, y + 56);
+    ctx.fillStyle = '#1f7a48'; ctx.font = 'bold 50px ' + FUENTE;
+    ctx.fillText(money(monto), bx, y + 104);
+  } else {
+    ctx.fillStyle = '#c0392b'; ctx.font = 'bold 54px ' + FUENTE;
+    ctx.fillText(money(num(c.saldo)), bx, y + 76);
+  }
+
+  const rx = M + boxW + 44;
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#8a8f99'; ctx.font = '24px ' + FUENTE;
+  ctx.fillText('Saldo pendiente:', rx, y + 48);
+  ctx.fillStyle = '#c0392b'; ctx.font = 'bold 42px ' + FUENTE;
+  ctx.fillText(money(num(c.saldo)), rx, y + 84);
+  ctx.fillStyle = '#8a8f99'; ctx.font = '22px ' + FUENTE;
+  ctx.fillText('Abonado ' + money(num(c.abonado)) + ' de ' + money(num(c.total)), rx, y + 136);
+  ctx.textAlign = 'center';
+  y += boxH + 30;
+
+  // Línea
+  ctx.strokeStyle = '#e6d6a8'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(M, y); ctx.lineTo(W - M, y); ctx.stroke(); y += 30;
+
+  // Datos para pagar
+  const pago = String(cfg.datos_pago || '').trim();
+  if(pago){
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#8a8f99'; ctx.font = 'bold 22px ' + FUENTE;
+    ctx.fillText('Datos para pagar (SINPE):', M, y); y += 30;
+    ctx.fillStyle = '#333a45'; ctx.font = '22px ' + FUENTE;
+    for(const ln of pago.split('\n')){ ctx.fillText(ln, M, y); y += 28; }
+    ctx.textAlign = 'center';
+    y += 12;
+  }
+
+  // Pie
+  ctx.fillStyle = '#8a6b1e'; ctx.font = '24px ' + FUENTE;
+  for(const ln of envolverTexto(ctx, '¡Gracias por comprar en King Quepoa, tu esencia, tu estilo, tu reino!', W - M * 2)){
+    ctx.fillText(ln, cx, y); y += 34;
+  }
+
+  const H = Math.ceil(y) + 46;
+  const final = document.createElement('canvas'); final.width = W; final.height = H;
+  final.getContext('2d').drawImage(cv, 0, 0, W, H, 0, 0, W, H);
+  return await new Promise(r => final.toBlob(r, 'image/png'));
+}
+
+// Tocar el 📲 de Cobros: arma la imagen, la copia (sin link) y abre el chat del cliente.
+async function enviarImagenCobro(c){
+  toast('🧾 Armando el recordatorio…');
+  let blob = null;
+  try { blob = await imagenCobro(c); } catch(e){ blob = null; }
+  if(!blob){
+    await copiarTexto(textoCobro(c), '📋 Copié el recordatorio');
+    if(c.telefono) abrirWhatsApp('', c.telefono);
+    return;
+  }
+  await entregarImagen(blob, '🧾 Recordatorio copiado — pegalo en el chat');
+  if(c.telefono) setTimeout(() => abrirWhatsApp('', c.telefono), 700);
 }
 
 function abrirProducto(p){
@@ -818,7 +939,7 @@ function pintarCobros(app){
     cont.querySelectorAll('[data-cobro]').forEach(el => {
       el.addEventListener('click', () => {
         const c = cobros.find(x => String(x.venta_id) === String(el.dataset.cobro));
-        if(c) abrirWhatsApp(textoCobro(c), c.telefono);
+        if(c) enviarImagenCobro(c);
       });
     });
   };
