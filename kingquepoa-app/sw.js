@@ -2,7 +2,7 @@
    Guarda la app para que abra sin internet.
    Los datos del inventario los maneja la propia app (localStorage). */
 
-const CACHE = 'kq-app-v1';
+const CACHE = 'kq-app-v2';
 const ARCHIVOS = [
   './',
   './index.html',
@@ -33,6 +33,20 @@ self.addEventListener('fetch', (e) => {
   // Google (catálogo y movimientos) siempre va a la red.
   if (url.hostname.includes('script.google.com') || url.hostname.includes('googleusercontent.com')) return;
   if (e.request.method !== 'GET') return;
+
+  // La app siempre se busca en la red (para recibir mejoras); si no hay, usa la copia.
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request)
+        .then(resp => {
+          const copia = resp.clone();
+          caches.open(CACHE).then(c => c.put('./index.html', copia));
+          return resp;
+        })
+        .catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
 
   e.respondWith(
     caches.match(e.request).then(cacheado => {
