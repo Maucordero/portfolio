@@ -140,7 +140,7 @@
   .estado-mini.pend{color:var(--gold)}
 
   nav{
-    position:fixed;left:0;right:0;bottom:0;z-index:30;display:grid;grid-template-columns:repeat(4,1fr);
+    position:fixed;left:0;right:0;bottom:0;z-index:30;display:grid;grid-template-columns:repeat(5,1fr);
     gap:2px;padding:6px 6px calc(6px + env(safe-area-inset-bottom));
     background:rgba(21,24,32,.97);backdrop-filter:blur(12px);border-top:1px solid var(--line)
   }
@@ -205,6 +205,7 @@
 
 <nav>
   <button data-v="stock" class="activo"><i>🧴</i><span>Stock</span></button>
+  <button data-v="cobros"><i>💰</i><span>Cobros</span></button>
   <button data-v="anotar"><i>📝</i><span>Anotar</span></button>
   <button data-v="catalogo"><i>📋</i><span>Catálogo</span></button>
   <button data-v="ajustes"><i>⚙️</i><span>Ajustes</span></button>
@@ -221,10 +222,11 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.0.0';
-const LS = { datos:'kq_datos_v1', token:'kq_token_v1', cola:'kq_cola_v1' };
+const VERSION = '1.1.0';
+const LS = { datos:'kq_datos_v1', token:'kq_token_v1', cola:'kq_cola_v1', cobros:'kq_cobros_v1' };
 
 let datos = { inventario:[], config:{}, guardado:null };
+let cobros = [];
 let vista = 'stock';
 let filtro = { q:'', cat:'Todos', soloStock:false };
 let cola = [];
@@ -408,6 +410,7 @@ function render(){
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('activo', b.dataset.v === vista));
   const app = $('#app');
   if(vista === 'stock') return pintarStock(app);
+  if(vista === 'cobros') return pintarCobros(app);
   if(vista === 'anotar') return pintarAnotar(app);
   if(vista === 'catalogo') return pintarCatalogo(app);
   if(vista === 'ajustes') return pintarAjustes(app);
@@ -513,6 +516,135 @@ function abrirProducto(p){
   $('.hoja-fondo').addEventListener('click', e => { if(e.target.classList.contains('hoja-fondo')) cerrar(); });
   $('#h-copiar').onclick = () => copiar(textoInfo(p), 'Texto copiado');
   $('#h-wa').onclick = () => abrirWhatsApp(textoInfo(p), '');
+}
+
+/* ---------------- cobros (clientes que deben) ---------------- */
+let cobrosError = '';
+
+function textoCobro(c){
+  const nombre = String(c.cliente||'').trim().split(/\s+/)[0] || '';
+  const mi = (datos.config && datos.config.mi_nombre) || 'Mauricio';
+  const fecha = c.proximo ? String(c.proximo).slice(0,10).split('-').reverse().join('/') : '';
+  const l = [];
+  l.push(`¡Hola ${nombre}! Soy ${mi}, de la perfumería *King Quepoa*.`);
+  l.push('');
+  l.push(`Te recuerdo que tenés un saldo de ${money(c.saldo)} por ${c.producto || 'tu perfume'}.`);
+  if (num(c.atrasado) === 1 && fecha) l.push(`El abono venció el ${fecha}.`);
+  else if (fecha) l.push(`El próximo abono vence el ${fecha}.`);
+  l.push('');
+  l.push('Cuando puedas me escribís. ¡Gracias!');
+  return l.join('\n');
+}
+
+async function cargarCobros(mostrar){
+  const t = token();
+  if(!t){ if(mostrar) toast('Falta la clave en Ajustes', 'error'); return; }
+  if(mostrar) toast('Actualizando…');
+  try {
+    const r = await fetch(API + '?action=cobros&token=' + encodeURIComponent(t) + '&t=' + Date.now());
+    const j = await r.json();
+    if(!j || !j.ok) throw new Error((j && j.error) || 'No se pudo leer la lista');
+    cobros = Array.isArray(j.cobros) ? j.cobros : [];
+    cobrosError = '';
+    guardarLS(LS.cobros, { cobros, guardado: Date.now() });
+    if(vista === 'cobros') render();
+    if(mostrar) toast('Cobros actualizados');
+  } catch(e) {
+    cobrosError = /Acci[oó]n desconocida/i.test(e.message)
+      ? 'Falta actualizar el script de Google (versión 1.1).'
+      : e.message;
+    if(vista === 'cobros') render();
+    if(mostrar) toast(cobrosError, 'error');
+  }
+}
+
+function pintarCobros(app){
+  if(!token()){
+    app.innerHTML = `<div class="card">
+      <h3>Clientes que deben</h3>
+      <p class="hint" style="margin:8px 0 14px">Los saldos son privados: necesitan la clave. Se pone una sola vez.</p>
+      <button class="btn" id="cb-ir">Ir a Ajustes</button>
+    </div>`;
+    $('#cb-ir').onclick = () => { vista = 'ajustes'; render(); };
+    return;
+  }
+
+  if(!cobros.length){
+    if(cobrosError){
+      app.innerHTML = `<div class="card">
+        <h3>Clientes que deben</h3>
+        <p class="hint" style="margin:8px 0 14px">${esc(cobrosError)}</p>
+        <button class="btn ghost" id="cb-ref">⟳ Reintentar</button>
+      </div>`;
+      $('#cb-ref').onclick = () => cargarCobros(true);
+      return;
+    }
+    app.innerHTML = `<div class="vacio"><span class="em">✅</span>No hay clientes con saldo pendiente.
+      <div style="font-size:12.5px;margin-top:6px">Si acabás de cobrar, actualizá la lista.</div></div>
+      <button class="btn ghost" id="cb-ref">⟳ Actualizar</button>`;
+    $('#cb-ref').onclick = () => cargarCobros(true);
+    return;
+  }
+
+  const total = cobros.reduce((s,c) => s + num(c.saldo), 0);
+  const atras = cobros.filter(c => num(c.atrasado) === 1).length;
+
+  app.innerHTML = `
+    <div class="card" style="display:flex;gap:10px;align-items:center">
+      <div style="flex:1">
+        <small class="muted" style="font-size:11px;letter-spacing:.08em">TOTAL POR COBRAR</small>
+        <div style="font-size:23px;font-weight:700;color:var(--gold2);line-height:1.2">${money(total)}</div>
+      </div>
+      <div style="text-align:right">
+        <small class="muted" style="font-size:11px;letter-spacing:.08em">CLIENTES</small>
+        <div style="font-size:23px;font-weight:700;line-height:1.2">${cobros.length}</div>
+      </div>
+    </div>
+    ${atras ? `<div class="aviso">⚠️ ${atras} con abono vencido. Tocalo para mandarle el recordatorio.</div>` : ''}
+    ${cobrosError ? `<div class="aviso">${esc(cobrosError)}</div>` : ''}
+    <div class="buscador"><span>🔍</span><input id="cb-q" placeholder="Buscar cliente o perfume…" autocomplete="off"></div>
+    <div id="cb-lista"></div>`;
+
+  const pintar = () => {
+    const q = norm($('#cb-q').value);
+    const lista = cobros.filter(c =>
+      !q || norm(c.cliente).includes(q) || norm(c.producto).includes(q));
+    const cont = $('#cb-lista');
+    if(!lista.length){
+      cont.innerHTML = `<div class="vacio"><span class="em">🔍</span>No encontré ese cliente.</div>`;
+      return;
+    }
+    cont.innerHTML = lista.map(c => {
+      const atrasado = num(c.atrasado) === 1;
+      const fecha = c.proximo ? String(c.proximo).slice(0,10).split('-').reverse().join('/') : '';
+      const cant = num(c.cantidad) > 1 ? ' · ' + num(c.cantidad) + ' u.' : '';
+      return `<div class="prod" data-cobro="${esc(c.venta_id)}">
+        <div class="foto" style="font-size:20px">💰</div>
+        <div class="info">
+          <div class="nom" style="color:${atrasado ? 'var(--red)' : 'var(--green)'}">${esc(c.cliente)}</div>
+          <div class="mar">${esc(c.producto || '')}${cant}</div>
+          <div class="fila">
+            <span class="precio">${money(c.saldo)}</span>
+            <span class="pagos">${fecha ? (atrasado ? 'venció ' : 'vence ') + fecha : ''}</span>
+          </div>
+          <div class="fila" style="margin-top:4px">
+            <span class="tag">Abonado ${money(c.abonado)} de ${money(c.total)}</span>
+          </div>
+        </div>
+        <div style="font-size:19px;color:var(--green);align-self:center" title="Mandar recordatorio">📲</div>
+      </div>`;
+    }).join('');
+
+    cont.querySelectorAll('[data-cobro]').forEach(el => {
+      el.addEventListener('click', () => {
+        const c = cobros.find(x => String(x.venta_id) === String(el.dataset.cobro));
+        if(c) abrirWhatsApp(textoCobro(c), c.telefono);
+      });
+    });
+  };
+
+  $('#cb-q').addEventListener('input', pintar);
+  pintar();
 }
 
 /* ---------------- anotar ---------------- */
@@ -744,9 +876,11 @@ function pintarAjustes(app){
     try {
       localStorage.removeItem(LS.datos);
       localStorage.removeItem(LS.cola);
+      localStorage.removeItem(LS.cobros);
     } catch(e){}
     datos = { inventario:[], config:{}, guardado:null };
     cola = [];
+    cobros = [];
     toast('Datos borrados');
     sincronizar(false);
     render();
@@ -759,6 +893,7 @@ document.querySelectorAll('nav button').forEach(b => {
     vista = b.dataset.v;
     try { history.replaceState(null, '', '#' + vista); } catch(e){}
     render();
+    if(vista === 'cobros') cargarCobros(false);
     window.scrollTo(0,0);
   });
 });
@@ -781,6 +916,9 @@ window.addEventListener('beforeinstallprompt', e => {
   cola = leerLS(LS.cola, []);
   if(!Array.isArray(cola)) cola = [];
 
+  const gc = leerLS(LS.cobros, null);
+  if(gc && Array.isArray(gc.cobros)) cobros = gc.cobros;
+
   // Permite cargar la clave una sola vez desde un enlace:  ...?clave=XXXX
   try {
     const params = new URLSearchParams(location.search);
@@ -795,13 +933,14 @@ window.addEventListener('beforeinstallprompt', e => {
   } catch(e){}
 
   const h = location.hash.replace('#','');
-  if(['stock','anotar','catalogo','ajustes'].includes(h)) vista = h;
+  if(['stock','cobros','anotar','catalogo','ajustes'].includes(h)) vista = h;
 
   render();
   pintarEstado(!navigator.onLine);
 
   sincronizar(true).then(() => {
     if(cola.some(i => !i.subido)) subirCola();
+    if(token()) cargarCobros(false);
   });
 
   if('serviceWorker' in navigator){
