@@ -781,6 +781,19 @@ window.addEventListener('beforeinstallprompt', e => {
   cola = leerLS(LS.cola, []);
   if(!Array.isArray(cola)) cola = [];
 
+  // Permite cargar la clave una sola vez desde un enlace:  ...?clave=XXXX
+  try {
+    const params = new URLSearchParams(location.search);
+    const claveUrl = params.get('clave');
+    if(claveUrl && claveUrl.trim()){
+      guardarToken(claveUrl.trim());
+      params.delete('clave');
+      const q = params.toString();
+      history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash);
+      setTimeout(() => toast('Clave guardada en este teléfono'), 600);
+    }
+  } catch(e){}
+
   const h = location.hash.replace('#','');
   if(['stock','anotar','catalogo','ajustes'].includes(h)) vista = h;
 
