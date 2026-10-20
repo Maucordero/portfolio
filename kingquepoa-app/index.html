@@ -1,0 +1,801 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1014">
+<meta name="description" content="King Quepoa · inventario y mensajes de la perfumería">
+<title>King Quepoa</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="King Quepoa">
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  :root{
+    --bg:#0e1014;--panel:#151820;--panel2:#1b1f28;--panel3:#232936;
+    --line:#262b36;--line2:#333a49;--text:#e8eaf0;--muted:#98a0af;
+    --gold:#c9a24b;--gold2:#e6c87e;--green:#3ecf8e;--red:#f0575d;--blue:#5aa9ff;
+    --r:14px;--r-sm:10px;
+  }
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg);color:var(--text);
+    font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding-bottom:calc(78px + env(safe-area-inset-bottom));
+    overscroll-behavior-y:contain;
+  }
+  button,input,select,textarea{font:inherit;color:inherit}
+  h1,h2,h3,p{margin:0}
+  .oculto{display:none !important}
+
+  header{
+    position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:11px;
+    padding:calc(10px + env(safe-area-inset-top)) 14px 10px;
+    background:rgba(14,16,20,.93);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--line);
+  }
+  header img{width:36px;height:36px;border-radius:10px;flex:none}
+  header .t{flex:1;min-width:0}
+  header b{display:block;font-size:15px;letter-spacing:.2px}
+  header small{display:block;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  header small b{display:inline;font-weight:600;color:var(--green)}
+  .icono{
+    background:var(--panel2);border:1px solid var(--line);color:var(--text);
+    width:40px;height:40px;border-radius:11px;font-size:18px;line-height:1;
+  }
+  .icono:active{background:var(--panel3)}
+
+  main{padding:14px 14px 8px}
+  .titulo{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px}
+
+  .buscador{position:relative;margin-bottom:10px}
+  .buscador input{
+    width:100%;padding:12px 14px 12px 40px;border-radius:var(--r);
+    background:var(--panel);border:1px solid var(--line);outline:none;
+  }
+  .buscador input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,162,75,.15)}
+  .buscador span{position:absolute;left:13px;top:11px;color:var(--muted);font-size:16px}
+
+  .chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:10px;scrollbar-width:none}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{
+    white-space:nowrap;padding:8px 13px;border-radius:999px;font-size:13px;
+    background:var(--panel);border:1px solid var(--line);color:var(--muted)
+  }
+  .chip.on{background:rgba(201,162,75,.14);border-color:rgba(201,162,75,.5);color:var(--gold2)}
+
+  .prod{
+    display:flex;gap:12px;align-items:flex-start;padding:12px;margin-bottom:10px;
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  }
+  .prod:active{background:var(--panel2)}
+  .foto{
+    width:54px;height:54px;border-radius:12px;flex:none;overflow:hidden;
+    background:var(--panel2);display:grid;place-items:center;font-size:22px
+  }
+  .foto img{width:100%;height:100%;object-fit:cover;display:block}
+  .prod .info{flex:1;min-width:0}
+  .prod .nom{font-weight:600;font-size:14.5px;line-height:1.3;margin-bottom:2px}
+  .prod .mar{font-size:12.5px;color:var(--muted);margin-bottom:6px}
+  .fila{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .precio{color:var(--gold2);font-weight:700;font-size:14.5px}
+  .pagos{font-size:12px;color:var(--muted)}
+  .stock{
+    font-size:11px;padding:3px 8px;border-radius:999px;
+    background:rgba(62,207,142,.12);border:1px solid rgba(62,207,142,.35);color:var(--green)
+  }
+  .stock.cero{background:rgba(240,87,93,.1);border-color:rgba(240,87,93,.35);color:var(--red)}
+  .tag{
+    font-size:11px;padding:3px 8px;border-radius:999px;
+    background:var(--panel2);border:1px solid var(--line);color:var(--muted)
+  }
+
+  .vacio{text-align:center;color:var(--muted);padding:40px 10px;font-size:14px}
+  .vacio .em{font-size:34px;display:block;margin-bottom:8px}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
+  .card h3{font-size:14px;margin-bottom:4px}
+  .hint{font-size:12.5px;color:var(--muted)}
+
+  label.f{display:block;margin-bottom:12px}
+  label.f > span{display:block;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+  input,select,textarea{
+    width:100%;padding:12px;border-radius:var(--r-sm);
+    background:var(--panel2);border:1px solid var(--line);outline:none
+  }
+  input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,162,75,.14)}
+  textarea{resize:vertical;min-height:76px}
+  .dos{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+  .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:var(--panel2);padding:5px;border-radius:12px;border:1px solid var(--line);margin-bottom:14px}
+  .seg button{background:none;border:0;color:var(--muted);padding:10px 4px;border-radius:9px;font-size:13.5px}
+  .seg button.on{background:rgba(201,162,75,.15);color:var(--gold2);font-weight:600}
+
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    padding:13px 16px;border-radius:12px;border:0;font-weight:600;font-size:14.5px;
+    background:var(--gold);color:#171307;width:100%
+  }
+  .btn:active{filter:brightness(.95)}
+  .btn:disabled{opacity:.55}
+  .btn.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--text)}
+  .btn.verde{background:var(--green);color:#06281b}
+  .btn.rojo{background:transparent;border:1px solid rgba(240,87,93,.5);color:var(--red)}
+  .btn.sm{padding:9px 12px;font-size:13px;width:auto}
+
+  .lista-mini{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+  .mini{
+    display:flex;gap:10px;align-items:flex-start;padding:10px 12px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-sm)
+  }
+  .mini .c{flex:1;min-width:0}
+  .mini .c b{display:block;font-size:13.5px}
+  .mini .c small{color:var(--muted);font-size:11.5px}
+  .estado-mini{font-size:11px;white-space:nowrap}
+  .estado-mini.ok{color:var(--green)}
+  .estado-mini.pend{color:var(--gold)}
+
+  nav{
+    position:fixed;left:0;right:0;bottom:0;z-index:30;display:grid;grid-template-columns:repeat(4,1fr);
+    gap:2px;padding:6px 6px calc(6px + env(safe-area-inset-bottom));
+    background:rgba(21,24,32,.97);backdrop-filter:blur(12px);border-top:1px solid var(--line)
+  }
+  nav button{
+    background:none;border:0;color:var(--muted);font-size:10.5px;
+    display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 0;border-radius:11px
+  }
+  nav button i{font-style:normal;font-size:20px;line-height:1}
+  nav button.activo{color:var(--gold);background:rgba(201,162,75,.09)}
+
+  .hoja-fondo{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.62);display:flex;align-items:flex-end}
+  .hoja{
+    width:100%;max-height:90vh;overflow:auto;background:var(--panel);
+    border:1px solid var(--line);border-bottom:0;border-radius:20px 20px 0 0;
+    padding:8px 16px calc(20px + env(safe-area-inset-bottom))
+  }
+  .hoja .agarre{width:44px;height:4px;border-radius:2px;background:var(--line2);margin:6px auto 14px}
+  .hoja h2{font-size:17px;line-height:1.25;margin-bottom:3px}
+  .hoja .sub{font-size:12.5px;color:var(--muted);margin-bottom:12px}
+  .hoja .cuerpo{font-size:13.5px;color:#d7dbe5;white-space:pre-wrap;line-height:1.5;margin:12px 0}
+  .hoja .precios{display:flex;gap:10px;margin:12px 0}
+  .hoja .precios div{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px}
+  .hoja .precios small{display:block;font-size:11px;color:var(--muted);margin-bottom:3px}
+  .hoja .precios b{font-size:15px;color:var(--gold2)}
+  .hoja .precios div.p b{color:var(--green)}
+  .hoja .acciones{display:grid;gap:8px;margin-top:14px}
+
+  .toast{
+    position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translate(-50%,14px);
+    background:#232936;border:1px solid var(--line2);color:var(--text);
+    padding:11px 16px;border-radius:12px;font-size:13.5px;z-index:60;
+    opacity:0;pointer-events:none;transition:.18s;max-width:88vw;text-align:center
+  }
+  .toast.on{opacity:1;transform:translate(-50%,0)}
+  .toast.error{border-color:rgba(240,87,93,.6);color:#ffd7d9}
+
+  pre.catalogo{
+    background:var(--panel2);border:1px solid var(--line);border-radius:12px;
+    padding:13px;font:12.5px/1.55 ui-monospace,Consolas,monospace;
+    white-space:pre-wrap;word-break:break-word;margin:10px 0
+  }
+  .punto{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--green);margin-right:5px}
+  .punto.off{background:var(--red)}
+  .aviso{
+    font-size:12.5px;padding:10px 12px;border-radius:10px;margin-bottom:12px;
+    background:rgba(201,162,75,.1);border:1px solid rgba(201,162,75,.35);color:var(--gold2)
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <img src="./icons/icon-192.png" alt="">
+  <div class="t">
+    <b>King Quepoa</b>
+    <small id="estado"><span class="punto"></span>cargando…</small>
+  </div>
+  <button class="icono" id="btn-sync" title="Actualizar">⟳</button>
+</header>
+
+<main id="app"></main>
+
+<nav>
+  <button data-v="stock" class="activo"><i>🧴</i><span>Stock</span></button>
+  <button data-v="anotar"><i>📝</i><span>Anotar</span></button>
+  <button data-v="catalogo"><i>📋</i><span>Catálogo</span></button>
+  <button data-v="ajustes"><i>⚙️</i><span>Ajustes</span></button>
+</nav>
+
+<div id="hoja-wrap"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   King Quepoa · app del celular
+   Lee el catálogo de Google (público) y manda movimientos con
+   la clave privada que se pega una sola vez en Ajustes.
+   ============================================================ */
+
+const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
+const VERSION = '1.0.0';
+const LS = { datos:'kq_datos_v1', token:'kq_token_v1', cola:'kq_cola_v1' };
+
+let datos = { inventario:[], config:{}, guardado:null };
+let vista = 'stock';
+let filtro = { q:'', cat:'Todos', soloStock:false };
+let cola = [];
+let instalarEvento = null;
+
+/* ---------------- utilidades ---------------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const num = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+function money(n){
+  const v = Math.round(num(n));
+  return '₡' + v.toLocaleString('de-DE');
+}
+function norm(s){
+  return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+}
+function mil(n){ return Math.round(num(n)/1000)*1000; }
+
+function emojiFamilia(f){
+  const s = norm(f);
+  if(/citric|hesperid|limon|naranja/.test(s)) return '🍋';
+  if(/frut/.test(s)) return '🍓';
+  if(/floral/.test(s)) return '🌸';
+  if(/dulce|gourmand|vainilla|caramelo/.test(s)) return '🍯';
+  if(/ambar|oriental/.test(s)) return '🔥';
+  if(/especiad/.test(s)) return '🌶️';
+  if(/amaderad|madera|woods/.test(s)) return '🪵';
+  if(/acuatic|marin/.test(s)) return '💧';
+  if(/aromatic|fouger/.test(s)) return '🌿';
+  if(/cuero|leather/.test(s)) return '🧥';
+  return '🧴';
+}
+function genero(cat){
+  const c = String(cat||'');
+  if(c === 'Hombre') return '👨 Fragancia de hombre';
+  if(c === 'Mujer')  return '👩 Fragancia de mujer';
+  if(c === 'Unisex') return '⚥ Perfume unisex';
+  return '';
+}
+function hace(ts){
+  if(!ts) return 'sin datos';
+  const d = new Date(ts);
+  if(isNaN(d)) return 'sin datos';
+  const min = Math.floor((Date.now() - d.getTime())/60000);
+  if(min < 1) return 'recién';
+  if(min < 60) return 'hace ' + min + ' min';
+  const h = Math.floor(min/60);
+  if(h < 24) return 'hace ' + h + ' h';
+  return 'hace ' + Math.floor(h/24) + ' d';
+}
+function toast(msg, tipo){
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast on' + (tipo === 'error' ? ' error' : '');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>{ t.className = 'toast' + (tipo === 'error' ? ' error' : ''); }, 2600);
+}
+
+/* ---------------- almacenamiento ---------------- */
+function leerLS(k, def){
+  try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; }
+  catch(e){ return def; }
+}
+function guardarLS(k, v){
+  try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){}
+}
+
+function token(){
+  try { return localStorage.getItem(LS.token) || ''; } catch(e){ return ''; }
+}
+function guardarToken(t){
+  try { t ? localStorage.setItem(LS.token, t) : localStorage.removeItem(LS.token); } catch(e){}
+}
+
+/* ---------------- datos ---------------- */
+async function sincronizar(silencioso){
+  if(!silencioso) $('#estado').innerHTML = '<span class="punto"></span>actualizando…';
+  try {
+    const r = await fetch(API + '?action=catalogo&t=' + Date.now(), { cache:'no-store' });
+    const j = await r.json();
+    if(!j || !j.ok) throw new Error((j && j.error) || 'Respuesta inválida');
+    datos = {
+      inventario: Array.isArray(j.inventario) ? j.inventario : [],
+      config: j.config || {},
+      guardado: Date.now()
+    };
+    guardarLS(LS.datos, datos);
+    pintarEstado();
+    if(vista === 'stock') pintarLista(); else render();
+    if(!silencioso) toast('Inventario actualizado');
+    return true;
+  } catch(e){
+    pintarEstado(true);
+    if(!silencioso) toast('Sin conexión · mostrando lo guardado', 'error');
+    return false;
+  }
+}
+
+function pintarEstado(offline){
+  const el = $('#estado');
+  if(!el) return;
+  if(offline || !navigator.onLine){
+    el.innerHTML = '<span class="punto off"></span>sin conexión · ' + (datos.guardado ? hace(datos.guardado) : 'sin datos');
+  } else {
+    const n = datos.inventario.length;
+    el.innerHTML = '<span class="punto"></span>' + (n ? n + ' perfumes · ' + hace(datos.guardado) : 'actualizando…');
+  }
+}
+
+/* ---------------- textos ---------------- */
+function textoInfo(p){
+  const cfg = datos.config || {};
+  const g = genero(p.categoria);
+  const ml = p.ml ? (num(p.ml) + ' ML') : '';
+  const l = [];
+  l.push('🧴 ' + p.nombre);
+  if(g) l.push(g);
+  if(p.descripcion){ l.push(''); l.push(String(p.descripcion)); }
+  l.push('');
+  if(ml) l.push('📦 Presentación: ' + ml);
+  if(num(p.precio_crc)) l.push('💸 Precio: ' + money(p.precio_crc));
+  if(num(p.precio_pagos_crc)) l.push('💳 A 2 pagos: ' + money(p.precio_pagos_crc));
+  if(cfg.envios) l.push('🚚 Envíos: ' + cfg.envios);
+  l.push('');
+  l.push('💬 Escribinos si querés asesoría para elegir tu perfume.');
+  return l.join('\n');
+}
+
+function textoCatalogo(){
+  const cfg = datos.config || {};
+  const con = datos.inventario.filter(p => num(p.stock) > 0);
+  const grupos = [['Hombre','👨 HOMBRE'],['Mujer','👩 MUJER'],['Unisex','⚥ UNISEX'],['','SIN CATEGORÍA']];
+  let t = '🧴 CATÁLOGO DE PERFUMES\n✅ Disponibilidad inmediata\n';
+  for(const [cat, titulo] of grupos){
+    const lista = con.filter(p => String(p.categoria||'') === cat);
+    if(!lista.length) continue;
+    t += '\n' + titulo + '\n';
+    for(const p of lista){
+      const em = emojiFamilia(p.familia);
+      const pre = num(p.precio_crc);
+      const pag = num(p.precio_pagos_crc) || mil(pre * (1 + num(cfg.recargo_pagos)/100));
+      t += em + ' ' + p.nombre + ' — Contado: ' + money(pre) + ' · A 2 pagos: ' + money(pag) + '\n';
+    }
+  }
+  t += '\n🛒 Traemos cualquier perfume que quieras, en 7 días o menos.';
+  return t;
+}
+
+/* ---------------- WhatsApp / copiar ---------------- */
+function telCR(tel){
+  const d = String(tel||'').replace(/\D/g,'');
+  if(!d) return '';
+  if(d.length === 8) return '506' + d;
+  return d;
+}
+function abrirWhatsApp(texto, tel){
+  const t = telCR(tel);
+  const url = 'https://wa.me/' + (t || '') + '?text=' + encodeURIComponent(texto);
+  window.open(url, '_blank');
+}
+async function copiar(txt, msg){
+  try {
+    if(navigator.clipboard && window.isSecureContext){
+      await navigator.clipboard.writeText(txt);
+      toast(msg || 'Copiado');
+      return;
+    }
+  } catch(e){}
+  const ta = document.createElement('textarea');
+  ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); toast(msg || 'Copiado'); }
+  catch(e){ toast('No se pudo copiar', 'error'); }
+  ta.remove();
+}
+
+/* ---------------- pantallas ---------------- */
+function render(){
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('activo', b.dataset.v === vista));
+  const app = $('#app');
+  if(vista === 'stock') return pintarStock(app);
+  if(vista === 'anotar') return pintarAnotar(app);
+  if(vista === 'catalogo') return pintarCatalogo(app);
+  if(vista === 'ajustes') return pintarAjustes(app);
+}
+
+function pintarStock(app){
+  app.innerHTML = `
+    <div class="buscador"><span>🔍</span><input id="q" placeholder="Buscar perfume o marca…" value="${esc(filtro.q)}" autocomplete="off"></div>
+    <div class="chips" id="chips">
+      ${['Todos','Hombre','Mujer','Unisex'].map(c => `<button class="chip ${filtro.cat===c?'on':''}" data-cat="${c}">${c}</button>`).join('')}
+      <button class="chip ${filtro.soloStock?'on':''}" data-stock="1">En stock</button>
+    </div>
+    <div id="lista"></div>`;
+
+  $('#q').addEventListener('input', e => { filtro.q = e.target.value; pintarLista(); });
+  $('#chips').addEventListener('click', e => {
+    const b = e.target.closest('button'); if(!b) return;
+    if(b.dataset.cat){ filtro.cat = b.dataset.cat; filtro.soloStock = false; }
+    if(b.dataset.stock){ filtro.soloStock = !filtro.soloStock; }
+    render();
+  });
+  pintarLista();
+}
+
+function listaFiltrada(){
+  const q = norm(filtro.q);
+  return datos.inventario.filter(p => {
+    if(filtro.cat !== 'Todos' && String(p.categoria||'') !== filtro.cat) return false;
+    if(filtro.soloStock && num(p.stock) <= 0) return false;
+    if(!q) return true;
+    return norm(p.nombre).includes(q) || norm(p.marca).includes(q) || norm(p.familia).includes(q);
+  });
+}
+
+function pintarLista(){
+  const cont = $('#lista');
+  if(!cont) return;
+  if(!datos.inventario.length){
+    cont.innerHTML = `<div class="vacio"><span class="em">📭</span>No hay datos todavía.<br>Abrí <b>Ajustes → Actualizar</b>.</div>`;
+    return;
+  }
+  const lista = listaFiltrada();
+  if(!lista.length){
+    cont.innerHTML = `<div class="vacio"><span class="em">🔍</span>No encontré ese perfume.</div>`;
+    return;
+  }
+  cont.innerHTML = lista.map(p => {
+    const st = num(p.stock);
+    return `<div class="prod" data-id="${esc(p.id)}">
+      <div class="foto">${p.foto ? `<img src="${esc(p.foto)}" alt="" loading="lazy" onerror="this.parentNode.textContent='🧴'">` : '🧴'}</div>
+      <div class="info">
+        <div class="nom">${esc(p.nombre)}</div>
+        <div class="mar">${esc(p.marca||'')}${p.ml ? ' · ' + esc(p.ml) + ' ml' : ''}</div>
+        <div class="fila">
+          <span class="precio">${money(p.precio_crc)}</span>
+          <span class="pagos">2 pagos ${money(p.precio_pagos_crc)}</span>
+        </div>
+        <div class="fila" style="margin-top:6px">
+          <span class="stock ${st<=0?'cero':''}">${st>0 ? st + ' en stock' : 'Agotado'}</span>
+          <span class="tag">${esc(p.categoria||'—')}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  cont.querySelectorAll('.prod').forEach(el => {
+    el.addEventListener('click', () => {
+      const p = datos.inventario.find(x => String(x.id) === String(el.dataset.id));
+      if(p) abrirProducto(p);
+    });
+  });
+}
+
+function abrirProducto(p){
+  const st = num(p.stock);
+  const wrap = $('#hoja-wrap');
+  wrap.innerHTML = `<div class="hoja-fondo">
+    <div class="hoja">
+      <div class="agarre"></div>
+      <h2>${esc(p.nombre)}</h2>
+      <div class="sub">${esc(p.marca||'')} · ${esc(p.categoria||'')}${p.ml ? ' · ' + esc(p.ml) + ' ml' : ''}</div>
+      <div class="fila">
+        <span class="stock ${st<=0?'cero':''}">${st>0 ? st + ' en stock' : 'Agotado'}</span>
+        ${p.familia ? `<span class="tag">${esc(p.familia)}</span>` : ''}
+        ${p.momento ? `<span class="tag">${esc(p.momento)}</span>` : ''}
+      </div>
+      <div class="precios">
+        <div><small>Contado</small><b>${money(p.precio_crc)}</b></div>
+        <div class="p"><small>A 2 pagos</small><b>${money(p.precio_pagos_crc)}</b></div>
+      </div>
+      ${p.descripcion ? `<div class="cuerpo">${esc(p.descripcion)}</div>` : ''}
+      <div class="acciones">
+        <button class="btn verde" id="h-wa">📲 Enviar por WhatsApp</button>
+        <button class="btn ghost" id="h-copiar">📋 Copiar el texto</button>
+        <button class="btn ghost" id="h-cerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>`;
+
+  const cerrar = () => { wrap.innerHTML = ''; };
+  $('#h-cerrar').onclick = cerrar;
+  $('.hoja-fondo').addEventListener('click', e => { if(e.target.classList.contains('hoja-fondo')) cerrar(); });
+  $('#h-copiar').onclick = () => copiar(textoInfo(p), 'Texto copiado');
+  $('#h-wa').onclick = () => abrirWhatsApp(textoInfo(p), '');
+}
+
+/* ---------------- anotar ---------------- */
+let tipoMov = 'abono';
+
+function pintarAnotar(app){
+  const t = token();
+  const perfumes = datos.inventario;
+  app.innerHTML = `
+    ${t ? '' : `<div class="aviso">⚠️ Falta la clave en <b>Ajustes</b>. Podés anotar igual: queda guardado en el teléfono y se sube después.</div>`}
+    <div class="seg" id="seg-tipo">
+      <button data-t="abono" class="${tipoMov==='abono'?'on':''}">💰 Abono</button>
+      <button data-t="venta" class="${tipoMov==='venta'?'on':''}">🛍 Venta</button>
+      <button data-t="nota"  class="${tipoMov==='nota'?'on':''}">📝 Nota</button>
+    </div>
+    <form id="f-mov" autocomplete="off">
+      <label class="f"><span>Cliente</span><input id="m-cliente" placeholder="Nombre y apellido"></label>
+      <div class="dos">
+        <label class="f"><span>Teléfono</span><input id="m-tel" inputmode="tel" placeholder="88888888"></label>
+        <label class="f" id="f-monto"><span>Monto ₡</span><input id="m-monto" inputmode="numeric" placeholder="10000"></label>
+      </div>
+      <label class="f" id="f-perfume"><span>Perfume</span>
+        <select id="m-perfume">
+          <option value="">— Elegir —</option>
+          ${perfumes.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}${num(p.stock)<=0?' (agotado)':''}</option>`).join('')}
+        </select>
+      </label>
+      <label class="f" id="f-cant"><span>Cantidad</span><input id="m-cant" inputmode="numeric" value="1"></label>
+      <label class="f"><span>Nota</span><textarea id="m-nota" placeholder="Ej: abonó por SINPE, pasa el 1 a pagar el resto…"></textarea></label>
+      <button class="btn" type="submit">Guardar</button>
+    </form>
+    <div class="titulo">Últimos registros</div>
+    <div class="lista-mini" id="m-lista"></div>`;
+
+  $('#seg-tipo').addEventListener('click', e => {
+    const b = e.target.closest('button'); if(!b) return;
+    tipoMov = b.dataset.t;
+    render();
+  });
+
+  const mostrar = () => {
+    $('#f-monto').classList.toggle('oculto', tipoMov === 'nota');
+    $('#f-perfume').classList.toggle('oculto', tipoMov === 'nota');
+    $('#f-cant').classList.toggle('oculto', tipoMov !== 'venta');
+  };
+  mostrar();
+
+  $('#m-perfume').addEventListener('change', e => {
+    if(tipoMov !== 'venta') return;
+    const p = perfumes.find(x => String(x.id) === String(e.target.value));
+    if(p){
+      const c = Math.max(1, num($('#m-cant').value) || 1);
+      $('#m-monto').value = Math.round(num(p.precio_crc) * c);
+    }
+  });
+
+  $('#f-mov').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const payload = {
+      tipo: tipoMov,
+      cliente: $('#m-cliente').value.trim(),
+      telefono: $('#m-tel').value.trim(),
+      nota: $('#m-nota').value.trim(),
+      dispositivo: 'app-celular'
+    };
+    const pid = $('#m-perfume').value;
+    if(pid){
+      const p = perfumes.find(x => String(x.id) === String(pid));
+      if(p){ payload.perfume_id = p.id; payload.perfume = p.nombre; }
+    }
+    if(tipoMov !== 'nota') payload.monto = num($('#m-monto').value);
+    if(tipoMov === 'venta') payload.cantidad = Math.max(1, num($('#m-cant').value));
+
+    if(tipoMov === 'abono' && !(payload.monto > 0)) return toast('Poné el monto del abono', 'error');
+    if(tipoMov === 'venta' && !payload.perfume) return toast('Elegí el perfume vendido', 'error');
+    if(tipoMov === 'nota' && !payload.nota) return toast('Escribí la nota', 'error');
+    if(!payload.cliente && !payload.nota) return toast('Poné el cliente o una nota', 'error');
+
+    const item = { local: Date.now() + '-' + Math.random().toString(36).slice(2,6), ts: Date.now(), payload, subido:false };
+    cola.push(item);
+    guardarCola();
+    render();
+    toast('Guardado en el teléfono');
+    subirCola();
+  });
+
+  pintarCola();
+}
+
+function pintarCola(){
+  const cont = $('#m-lista');
+  if(!cont) return;
+  if(!cola.length){ cont.innerHTML = `<div class="hint">Todavía no anotaste nada.</div>`; return; }
+  const ult = cola.slice().reverse().slice(0, 12);
+  cont.innerHTML = ult.map(i => {
+    const p = i.payload;
+    const titulo = p.tipo === 'abono' ? ('Abono ' + money(p.monto))
+      : p.tipo === 'venta' ? ('Venta · ' + (p.perfume || 'perfume'))
+      : 'Nota';
+    const detalle = [p.cliente, p.perfume && p.tipo !== 'venta' ? p.perfume : '', p.nota].filter(Boolean).join(' · ');
+    const fecha = new Date(i.ts).toLocaleString('es-CR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    return `<div class="mini">
+      <div class="c"><b>${esc(titulo)}</b><small>${esc(detalle || '—')} · ${esc(fecha)}</small></div>
+      <span class="estado-mini ${i.subido?'ok':'pend'}">${i.subido ? '✅' : '⏳'}</span>
+    </div>`;
+  }).join('') + (cola.some(i => !i.subido) ? `<button class="btn ghost sm" id="btn-subir" style="width:100%">⬆ Subir pendientes</button>` : '');
+  const b = $('#btn-subir');
+  if(b) b.onclick = subirCola;
+}
+
+function guardarCola(){
+  try { localStorage.setItem(LS.cola, JSON.stringify(cola)); } catch(e){}
+}
+
+async function subirCola(){
+  const pend = cola.filter(i => !i.subido);
+  if(!pend.length) return;
+  const t = token();
+  if(!t){ toast('Falta la clave en Ajustes', 'error'); return; }
+  let ok = 0, error = '';
+  for(const item of pend){
+    try {
+      const r = await fetch(API, {
+        method:'POST',
+        headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'movimiento', token:t, ...item.payload })
+      });
+      const j = await r.json();
+      if(j && j.ok){ item.subido = true; item.id = j.id; ok++; }
+      else { error = (j && j.error) || 'Google rechazó el registro'; }
+    } catch(e){ error = 'Sin conexión'; break; }
+  }
+  guardarCola();
+  if(vista === 'anotar') render();
+  if(ok) toast(ok === 1 ? 'Subido a Google' : ok + ' registros subidos');
+  if(error && !ok) toast(error, 'error');
+}
+
+/* ---------------- catálogo ---------------- */
+function pintarCatalogo(app){
+  if(!app) app = $('#app');
+  const txt = textoCatalogo();
+  app.innerHTML = `
+    <div class="card">
+      <h3>Catálogo para enviar</h3>
+      <p class="hint">Solo perfumes con stock. Es el mismo texto que copiás en la PC.</p>
+      <pre class="catalogo" id="cat-txt">${esc(txt)}</pre>
+      <div class="acciones" style="display:grid;gap:8px">
+        <button class="btn" id="c-copiar">📋 Copiar catálogo</button>
+        <button class="btn ghost" id="c-wa">📲 Enviar por WhatsApp</button>
+      </div>
+    </div>`;
+  $('#c-copiar').onclick = () => copiar(txt, 'Catálogo copiado');
+  $('#c-wa').onclick = () => abrirWhatsApp(txt, '');
+}
+
+/* ---------------- ajustes ---------------- */
+function pintarAjustes(app){
+  app.innerHTML = `
+    <div class="card">
+      <h3>Clave de Google</h3>
+      <p class="hint" style="margin-bottom:10px">Se pega una sola vez en este teléfono. Sirve para subir abonos y notas a la hoja.</p>
+      <label class="f"><span>Clave (token)</span><input id="a-token" type="password" placeholder="Pegala acá" autocomplete="new-password"></label>
+      <div style="display:grid;gap:8px">
+        <button class="btn" id="a-guardar">Guardar clave</button>
+        <button class="btn ghost" id="a-probar">🔌 Probar conexión</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Datos</h3>
+      <p class="hint" id="a-datos"></p>
+      <div style="display:grid;gap:8px;margin-top:10px">
+        <button class="btn ghost" id="a-actualizar">⟳ Actualizar inventario</button>
+        <button class="btn ghost" id="a-instarar" ${instalarEvento?'':'hidden'}>📲 Instalar en el teléfono</button>
+        <button class="btn rojo" id="a-limpiar">Borrar datos guardados</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Cómo funciona</h3>
+      <p class="hint">
+        La PC es la que manda: cuando cargás o cambiás un perfume, tocás
+        <b>☁️ Publicar a Google</b> y esta app lo ve al actualizar.<br><br>
+        Lo que anotás acá (abonos, ventas, notas) va a la pestaña
+        <b>MOVIMIENTOS</b> y después lo aplicás en la PC.
+      </p>
+    </div>
+
+    <p class="hint" style="text-align:center;padding:8px 0 4px">Versión ${VERSION}</p>`;
+
+  $('#a-token').value = token();
+  $('#a-datos').textContent = datos.guardado
+    ? (datos.inventario.length + ' perfumes · actualizado ' + hace(datos.guardado))
+    : 'Sin datos guardados todavía.';
+
+  $('#a-guardar').onclick = () => {
+    const t = $('#a-token').value.trim();
+    guardarToken(t);
+    toast(t ? 'Clave guardada' : 'Clave borrada');
+    subirCola();
+  };
+
+  $('#a-probar').onclick = async () => {
+    const t = $('#a-token').value.trim();
+    if(!t) return toast('Pegá la clave primero', 'error');
+    guardarToken(t);
+    toast('Probando…');
+    try {
+      const r = await fetch(API + '?action=movimientos&token=' + encodeURIComponent(t) + '&limite=1&t=' + Date.now());
+      const j = await r.json();
+      if(j && j.ok) toast('✅ Conexión correcta');
+      else toast((j && j.error) || 'La clave no funciona', 'error');
+    } catch(e){ toast('Sin conexión', 'error'); }
+  };
+
+  $('#a-actualizar').onclick = () => sincronizar(false);
+
+  $('#a-instarar').onclick = async () => {
+    if(!instalarEvento) return;
+    instalarEvento.prompt();
+    await instalarEvento.userChoice;
+    instalarEvento = null;
+    render();
+  };
+
+  $('#a-limpiar').onclick = () => {
+    if(!confirm('Borra el catálogo y los registros guardados en este teléfono. No borra nada en Google.')) return;
+    try {
+      localStorage.removeItem(LS.datos);
+      localStorage.removeItem(LS.cola);
+    } catch(e){}
+    datos = { inventario:[], config:{}, guardado:null };
+    cola = [];
+    toast('Datos borrados');
+    sincronizar(false);
+    render();
+  };
+}
+
+/* ---------------- navegación ---------------- */
+document.querySelectorAll('nav button').forEach(b => {
+  b.addEventListener('click', () => {
+    vista = b.dataset.v;
+    try { history.replaceState(null, '', '#' + vista); } catch(e){}
+    render();
+    window.scrollTo(0,0);
+  });
+});
+$('#btn-sync').addEventListener('click', () => sincronizar(false));
+
+window.addEventListener('online', () => { pintarEstado(); subirCola(); });
+window.addEventListener('offline', () => pintarEstado(true));
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  instalarEvento = e;
+  if(vista === 'ajustes') render();
+});
+
+/* ---------------- arranque ---------------- */
+(function init(){
+  const guardado = leerLS(LS.datos, null);
+  if(guardado && Array.isArray(guardado.inventario)){
+    datos = guardado;
+  }
+  cola = leerLS(LS.cola, []);
+  if(!Array.isArray(cola)) cola = [];
+
+  const h = location.hash.replace('#','');
+  if(['stock','anotar','catalogo','ajustes'].includes(h)) vista = h;
+
+  render();
+  pintarEstado(!navigator.onLine);
+
+  sincronizar(true).then(() => {
+    if(cola.some(i => !i.subido)) subirCola();
+  });
+
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    });
+  }
+})();
+</script>
+</body>
+</html>
