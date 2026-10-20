@@ -744,13 +744,7 @@ function pintarListaNotas(){
     b.onclick = () => subirNota(notas[Number(b.dataset.subir)], b);
   });
   cont.querySelectorAll("[data-borrar]").forEach(b => {
-    b.onclick = () => {
-      const i = Number(b.dataset.borrar);
-      if(!confirm('¿Borrar esta nota del teléfono?')) return;
-      notas.splice(i, 1);
-      guardarNotas();
-      render();
-    };
+    b.onclick = () => borrarNota(Number(b.dataset.borrar));
   });
 }
 
@@ -772,8 +766,36 @@ function enviarNotaWhatsApp(n){
   abrirWhatsApp(txt, numeroNegocio());
 }
 
-async function subirNota(n, btn){
+async function borrarNota(i){
+  const n = notas[i];
   if(!n) return;
+  const donde = n.subida ? 'del teléfono y de Google' : 'del teléfono';
+  if(!confirm(`¿Borrar esta nota ${donde}?`)) return;
+
+  if(n.subida && n.idRemoto){
+    const t = token();
+    if(!t) return toast('Falta la clave en Ajustes', 'error');
+    try {
+      const r = await fetch(API, {
+        method:'POST',
+        headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'borrar', token:t, ids:[n.idRemoto] })
+      });
+      const j = await r.json();
+      if(!j || !j.ok) throw new Error((j && j.error) || 'No se pudo borrar en Google');
+    } catch(e){
+      toast('No se borró en Google: ' + mensajeGoogle(e), 'error');
+      return;
+    }
+  }
+
+  notas.splice(i, 1);
+  guardarNotas();
+  render();
+  toast('Nota borrada');
+}
+
+async function subirNota(n, btn){  if(!n) return;
   const t = token();
   if(!t) return toast('Poné la clave en Ajustes', 'error');
   const texto = btn.textContent;
