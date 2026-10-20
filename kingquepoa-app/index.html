@@ -84,6 +84,7 @@
   .fila{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .precio{color:var(--gold2);font-weight:700;font-size:14.5px}
   .pagos{font-size:12px;color:var(--muted)}
+  .abono{font-size:12px;color:var(--gold2)}
   .stock{
     font-size:11px;padding:3px 8px;border-radius:999px;
     background:rgba(62,207,142,.12);border:1px solid rgba(62,207,142,.35);color:var(--green)
@@ -249,6 +250,17 @@ function norm(s){
   return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 }
 function mil(n){ return Math.round(num(n)/1000)*1000; }
+
+// Porcentaje de abono sugerido (se configura en la PC → Configuración → Prima sugerida)
+function primaPct(){
+  const p = num((datos.config || {}).prima_sugerida);
+  return p > 0 ? p : 0;
+}
+function abonoSugerido(p){
+  const pct = primaPct();
+  if(!pct) return 0;
+  return Math.round(num(p.precio_crc) * pct / 100 / 100) * 100;
+}
 
 function fotoUrl(p){
   const f = String((p && p.foto) || '');
@@ -477,6 +489,7 @@ function pintarLista(){
   cont.innerHTML = lista.map(p => {
     const st = num(p.stock);
     const foto = fotoUrl(p);
+    const abono = abonoSugerido(p);
     return `<div class="prod" data-id="${esc(p.id)}">
       <div class="foto">${foto ? `<img src="${esc(foto)}" alt="" loading="lazy" onerror="this.parentNode.textContent='🧴'">` : '🧴'}</div>
       <div class="info">
@@ -486,6 +499,7 @@ function pintarLista(){
           <span class="precio">${money(p.precio_crc)}</span>
           <span class="pagos">2 pagos ${money(p.precio_pagos_crc)}</span>
         </div>
+        ${abono ? `<div class="fila" style="margin-top:3px"><span class="abono">Abono ${primaPct()}%: ${money(abono)}</span></div>` : ''}
         <div class="fila" style="margin-top:6px">
           <span class="stock ${st<=0?'cero':''}">${st>0 ? st + ' en stock' : 'Agotado'}</span>
           <span class="tag">${esc(p.categoria||'—')}</span>
@@ -803,6 +817,7 @@ function abrirProducto(p){
         <div><small>Contado</small><b>${money(p.precio_crc)}</b></div>
         <div class="p"><small>A 2 pagos</small><b>${money(p.precio_pagos_crc)}</b></div>
       </div>
+      ${abonoSugerido(p) ? `<div class="abono" style="margin:-4px 0 10px">💰 Abono sugerido (${primaPct()}%): <b>${money(abonoSugerido(p))}</b></div>` : ''}
       ${p.descripcion ? `<div class="cuerpo">${esc(p.descripcion)}</div>` : ''}
       <div class="acciones">
         <button class="btn verde" id="h-wa">📲 Enviar imagen por WhatsApp</button>
