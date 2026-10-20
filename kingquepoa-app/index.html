@@ -456,8 +456,9 @@ function pintarLista(){
   }
   cont.innerHTML = lista.map(p => {
     const st = num(p.stock);
+    const foto = /^https?:\/\//i.test(String(p.foto || '')) ? String(p.foto) : '';
     return `<div class="prod" data-id="${esc(p.id)}">
-      <div class="foto">${p.foto ? `<img src="${esc(p.foto)}" alt="" loading="lazy" onerror="this.parentNode.textContent='🧴'">` : '🧴'}</div>
+      <div class="foto">${foto ? `<img src="${esc(foto)}" alt="" loading="lazy" onerror="this.parentNode.textContent='🧴'">` : '🧴'}</div>
       <div class="info">
         <div class="nom">${esc(p.nombre)}</div>
         <div class="mar">${esc(p.marca||'')}${p.ml ? ' · ' + esc(p.ml) + ' ml' : ''}</div>
