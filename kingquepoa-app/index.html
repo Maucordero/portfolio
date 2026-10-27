@@ -228,7 +228,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.5.0';
+const VERSION = '1.6.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1' };
@@ -623,6 +623,26 @@ function ventasLocales(){
 }
 function guardarVentasLocales(v){ guardarLS(LS.ventas, v.slice(0, 40)); }
 
+// Fechas siguientes al estilo día 1 / 16, a partir de una fecha.
+function cuotasProg(primera, n){
+  const fechas = [primera];
+  const cur = new Date(primera + 'T12:00:00');
+  for(let i = 0; i < 370 && fechas.length < n; i++){
+    cur.setDate(cur.getDate() + 1);
+    const dia = cur.getDate();
+    if(dia === 1 || dia === 16) fechas.push(isoFecha(cur.getFullYear(), cur.getMonth(), cur.getDate()));
+  }
+  return fechas.slice(0, n);
+}
+function progDefaultFechasCel(){
+  const a = proximaCuotaISO();
+  return cuotasProg(a, 2);
+}
+function fechaCortaCel(iso){
+  const [y, m, d] = String(iso || '').split('-');
+  return d && m ? d + '/' + m : String(iso || '');
+}
+
 function pintarVender(app){
   if(!esDueno()){ vista = 'stock'; return render(); }
   const enStock = datos.inventario.filter(p => num(p.stock) > 0);
@@ -644,6 +664,7 @@ function pintarVender(app){
           <option value="pagos5">A 5 pagos</option>
           <option value="pagos_sin_recargo">A 2 pagos sin recargo</option>
           <option value="un_pago_abono">A 1 pago con abono</option>
+          <option value="programado">Programado (fechas a elección)</option>
         </select></label>
       </div>
       <label class="f"><span>Cliente</span><input id="v-cli" placeholder="Nombre y apellido" autocomplete="off"></label>
@@ -651,12 +672,20 @@ function pintarVender(app){
       <div id="v-plan" class="oculto">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <label class="f"><span>Me da ahora</span><input id="v-abono" type="number" min="0" step="100" inputmode="numeric"></label>
-          <label class="f"><span>Primer abono</span><input id="v-fecha" type="date"></label>
+          <label class="f" id="v-fecha-wrap"><span>Primer abono</span><input id="v-fecha" type="date"></label>
         </div>
         <label class="f" id="v-modo-wrap"><span>Eso es</span><select id="v-modo">
           <option value="inicial">Abono inicial (adelanto)</option>
           <option value="primer_pago">Primer abono (pago 1)</option>
         </select></label>
+      </div>
+      <div id="v-prog" class="oculto">
+        <div class="hint" style="margin-bottom:8px">Pagos programados: elegí la fecha de cada pago (1 a 5). No lleva recargo.</div>
+        <div id="v-prog-fechas" style="display:grid;gap:8px"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn ghost sm" id="v-prog-add" type="button">＋ Pago</button>
+          <button class="btn ghost sm" id="v-prog-del" type="button">− Quitar</button>
+        </div>
       </div>
       <label class="f"><span>Referencia (solo para vos)</span><input id="v-ref" placeholder="Ej: chofer Pany" autocomplete="off"></label>
       <label class="f"><span>Nota (opcional)</span><input id="v-nota" placeholder="Ej: entrega el viernes"></label>
@@ -671,19 +700,45 @@ function pintarVender(app){
   const $p = () => datos.inventario.find(x => String(x.id) === $('#v-prod').value);
   const $cant = () => Math.max(1, Math.round(num($('#v-cant').value)));
   const $tipo = () => $('#v-tipo').value;
+  let progF = progDefaultFechasCel();
+
+  const leerProg = () => [...document.querySelectorAll('#v-prog-fechas .pf')]
+    .map(i => i.value).filter(Boolean).sort();
+
+  const renderProg = () => {
+    const cont = $('#v-prog-fechas');
+    if(!cont) return;
+    const hoy = new Date();
+    const min = isoFecha(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+    cont.innerHTML = progF.map((f, i) => `
+      <label class="f"><span>Pago ${i + 1}</span><input type="date" class="pf" data-i="${i}" value="${esc(f)}" min="${esc(min)}"></label>`).join('');
+    cont.querySelectorAll('.pf').forEach(inp => {
+      const act = () => { progF[Number(inp.dataset.i)] = inp.value; actualizar(); };
+      inp.addEventListener('input', act);
+      inp.addEventListener('change', act);
+    });
+  };
 
   const actualizar = () => {
     const p = $p();
     if(!p) return;
     const tipo = $tipo();
-    const planN = planDe(tipo);
-    const esPlan = planN > 0;
+    const esProg = tipo === 'programado';
+    $('#v-prog').classList.toggle('oculto', !esProg);
+    if(esProg && !document.querySelector('#v-prog-fechas .pf')) renderProg();
+    const prog = esProg ? leerProg() : [];
+    const planN = esProg ? prog.length : planDe(tipo);
+    const esPlan = esProg || planN > 0;
     const cant = $cant();
     const total = totalVenta(p, cant, tipo);
 
     $('#v-plan').classList.toggle('oculto', !esPlan);
+    const fechaWrap = $('#v-fecha-wrap');
+    if(fechaWrap) fechaWrap.classList.toggle('oculto', esProg);
+
+    const puedePrimer = esProg ? prog.length >= 1 : planN >= 2;
     const modoWrap = $('#v-modo-wrap');
-    if(modoWrap) modoWrap.classList.toggle('oculto', planN < 2);
+    if(modoWrap) modoWrap.classList.toggle('oculto', !puedePrimer);
 
     const abono = $('#v-abono');
     if(!esPlan) abono.value = 0;
@@ -692,15 +747,20 @@ function pintarVender(app){
     const monto = esPlan ? Math.min(num(abono.value), total) : total;
     const resto = Math.max(0, total - monto);
     const modo = $('#v-modo') ? $('#v-modo').value : 'inicial';
-    const esPrimer = esPlan && planN >= 2 && modo === 'primer_pago' && monto > 0;
-    const nCuotas = !esPlan ? 0 : (planN === 1 ? 1 : (esPrimer ? planN - 1 : planN));
+    const esPrimer = esPlan && puedePrimer && modo === 'primer_pago' && monto > 0;
+    const nCuotas = !esPlan ? 0
+      : (esProg ? prog.length : (planN === 1 ? 1 : (esPrimer ? planN - 1 : planN)));
     const cuota = nCuotas > 0 ? Math.round(resto / nCuotas) : 0;
 
     const partes = [`<b>Total: ${money(total)}</b>`];
     if(esPlan){
       partes.push(`${esPrimer ? '1er pago' : 'Prima'}: ${money(monto)}`);
-      if(nCuotas > 0) partes.push(`Saldo ${money(resto)} en ${nCuotas} pago${nCuotas === 1 ? '' : 's'} de ${money(cuota)}`);
-      else partes.push('Queda pagada');
+      if(nCuotas > 0){
+        partes.push(`Saldo ${money(resto)} en ${nCuotas} pago${nCuotas === 1 ? '' : 's'} de ${money(cuota)}`);
+        if(esProg && prog.length) partes.push(prog.map(fechaCortaCel).join(' · '));
+      } else {
+        partes.push('Queda pagada');
+      }
     } else {
       partes.push('Pago completo');
     }
@@ -720,6 +780,19 @@ function pintarVender(app){
   $('#v-cant').addEventListener('input', actualizar);
   $('#v-abono').addEventListener('input', e => { e.target.dataset.tocado = '1'; actualizar(); });
   $('#v-fecha').value = proximaCuotaISO();
+  $('#v-prog-add').onclick = () => {
+    if(progF.length >= 5) return toast('Máximo 5 pagos programados', 'error');
+    const ultima = progF[progF.length - 1] || proximaCuotaISO();
+    progF.push(cuotasProg(ultima, 2)[1] || ultima);
+    renderProg();
+    actualizar();
+  };
+  $('#v-prog-del').onclick = () => {
+    if(progF.length <= 1) return toast('Tiene que quedar al menos un pago', 'error');
+    progF.pop();
+    renderProg();
+    actualizar();
+  };
   actualizar();
 
   $('#v-guardar').onclick = async () => {
@@ -734,18 +807,22 @@ function pintarVender(app){
     if(!cliente) return toast('Falta el nombre del cliente', 'error');
     if(!tel) return toast('Falta el teléfono del cliente', 'error');
     const tipo = $tipo();
-    const planN = planDe(tipo);
-    const esPlan = planN > 0;
+    const esProg = tipo === 'programado';
+    const prog = esProg ? leerProg() : [];
+    if(esProg && !prog.length) return toast('Elegí al menos una fecha de pago', 'error');
+    const planN = esProg ? prog.length : planDe(tipo);
+    const esPlan = esProg || planN > 0;
     const total = totalVenta(p, cant, tipo);
     const abono = esPlan ? Math.min(num($('#v-abono').value), total) : total;
-    const fecha = esPlan ? ($('#v-fecha').value || proximaCuotaISO()) : '';
-    const modo = (planN >= 2 && $('#v-modo').value === 'primer_pago' && abono > 0) ? 'primer_pago' : 'inicial';
+    const fecha = esProg ? prog[0] : (esPlan ? ($('#v-fecha').value || proximaCuotaISO()) : '');
+    const puedePrimer = esProg ? prog.length >= 1 : planN >= 2;
+    const modo = (puedePrimer && $('#v-modo').value === 'primer_pago' && abono > 0) ? 'primer_pago' : 'inicial';
     const nota = $('#v-nota').value.trim();
     const referencia = $('#v-ref').value.trim();
-    const etiquetaPago = { contado:'contado', pagos:'2 pagos', pagos3:'3 pagos', pagos4:'4 pagos', pagos5:'5 pagos', pagos_sin_recargo:'2 pagos sin recargo', un_pago_abono:'1 pago con abono' }[tipo] || tipo;
+    const etiquetaPago = { contado:'contado', pagos:'2 pagos', pagos3:'3 pagos', pagos4:'4 pagos', pagos5:'5 pagos', pagos_sin_recargo:'2 pagos sin recargo', un_pago_abono:'1 pago con abono', programado:'programado' }[tipo] || tipo;
     // La marca va en la nota para que la PC entienda la venta aunque la hoja
     // todavía no tenga las columnas nuevas.
-    const marca = '[[KQV:' + JSON.stringify({ tipo_pago: tipo, abono: abono, primera_cuota: fecha, abono_modo: modo, referencia: referencia }) + ']]';
+    const marca = '[[KQV:' + JSON.stringify({ tipo_pago: tipo, abono: abono, primera_cuota: fecha, abono_modo: modo, referencia: referencia, fechas: esProg ? prog : undefined }) + ']]';
 
     const btn = $('#v-guardar');
     btn.disabled = true;
@@ -777,6 +854,7 @@ function pintarVender(app){
       $('#v-nota').value = '';
       $('#v-ref').value = '';
       const ab = $('#v-abono'); ab.dataset.tocado = '';
+      progF = progDefaultFechasCel();
       actualizar();
       pintarVentasLocales();
       toast('🧾 Venta anotada — entra sola al sistema');
@@ -801,7 +879,7 @@ function pintarVentasLocales(){
     return;
   }
   cont.innerHTML = lista.map(v => {
-    const etiqueta = { contado:'Contado', pagos:'2 pagos', pagos3:'3 pagos', pagos4:'4 pagos', pagos5:'5 pagos', pagos_sin_recargo:'2 pagos sin recargo', un_pago_abono:'1 pago con abono' }[v.tipo] || v.tipo;
+    const etiqueta = { contado:'Contado', pagos:'2 pagos', pagos3:'3 pagos', pagos4:'4 pagos', pagos5:'5 pagos', pagos_sin_recargo:'2 pagos sin recargo', un_pago_abono:'1 pago con abono', programado:'programado' }[v.tipo] || v.tipo;
     const estado = v.estado === 'confirmada'
       ? '<span class="tag" style="color:var(--green)">✅ en el sistema</span>'
       : '<span class="tag" style="color:var(--gold2)">⏳ esperando la PC</span>';
