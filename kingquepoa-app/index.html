@@ -99,7 +99,7 @@
   .vacio{text-align:center;color:var(--muted);padding:40px 10px;font-size:14px}
   .vacio .em{font-size:34px;display:block;margin-bottom:8px}
 
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px;overflow:hidden}
   .card h3{font-size:14px;margin-bottom:4px}
   .hint{font-size:12.5px;color:var(--muted)}
 
@@ -107,7 +107,8 @@
   label.f > span{display:block;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
   input,select,textarea{
     width:100%;padding:12px;border-radius:var(--r-sm);
-    background:var(--panel2);border:1px solid var(--line);outline:none
+    background:var(--panel2);border:1px solid var(--line);outline:none;
+    min-width:0;max-width:100%
   }
   input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,162,75,.14)}
   textarea{resize:vertical;min-height:76px}
@@ -147,7 +148,7 @@
     background:rgba(21,24,32,.97);backdrop-filter:blur(12px);border-top:1px solid var(--line)
   }
   nav button{
-    background:none;border:0;color:var(--muted);font-size:10.5px;
+    background:none;border:0;color:var(--muted);font-size:10.5px;min-width:0;
     display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 0;border-radius:11px
   }
   nav button i{font-style:normal;font-size:20px;line-height:1}
@@ -179,6 +180,7 @@
   }
   .toast.on{opacity:1;transform:translate(-50%,0)}
   .toast.error{border-color:rgba(240,87,93,.6);color:#ffd7d9}
+  .oculto{display:none!important}
 
   pre.catalogo{
     background:var(--panel2);border:1px solid var(--line);border-radius:12px;
@@ -208,10 +210,11 @@
 
 <nav>
   <button data-v="stock" class="activo"><i>🧴</i><span>Stock</span></button>
-  <button data-v="cobros"><i>💰</i><span>Cobros</span></button>
-  <button data-v="notas"><i>📝</i><span>Notas</span></button>
+  <button data-v="vender" class="oculto"><i>🛒</i><span>Vender</span></button>
+  <button data-v="cobros" class="oculto"><i>💰</i><span>Cobros</span></button>
+  <button data-v="notas" class="oculto"><i>📝</i><span>Notas</span></button>
   <button data-v="catalogo"><i>📋</i><span>Catálogo</span></button>
-  <button data-v="ajustes"><i>⚙️</i><span>Ajustes</span></button>
+  <button data-v="ajustes" class="oculto"><i>⚙️</i><span>Ajustes</span></button>
 </nav>
 
 <div id="hoja-wrap"></div>
@@ -225,10 +228,10 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
-const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1' };
+const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1' };
 
 let datos = { inventario:[], config:{}, guardado:null };
 let cobros = [];
@@ -252,16 +255,29 @@ function norm(s){
 }
 function mil(n){ return Math.round(num(n)/1000)*1000; }
 
-// Porcentaje de abono sugerido (se configura en la PC → Configuración → Prima sugerida)
-function primaPct(){
-  const p = num((datos.config || {}).prima_sugerida);
-  return p > 0 ? p : 0;
+// Prima en colones. El porcentaje es interno: el celular recibe solo montos.
+let _primasCache = { raw: null, mapa: {} };
+function primasMapa(){
+  const raw = String((datos.config || {}).prima_json || '');
+  if(raw !== _primasCache.raw){
+    let mapa = {};
+    try { mapa = JSON.parse(raw) || {}; } catch(e){ mapa = {}; }
+    _primasCache = { raw: raw, mapa: mapa };
+  }
+  return _primasCache.mapa;
 }
-function abonoSugerido(p){
-  const pct = primaPct();
-  if(!pct) return 0;
-  return Math.round(num(p.precio_crc) * pct / 100 / 100) * 100;
+function primaDe(p){
+  const directo = num(p && p.prima_crc);
+  if(directo > 0) return directo;
+  const m = primasMapa()[p && p.id];
+  if(m != null) return num(m);
+  // Compatibilidad con catálogos viejos que todavía traen el porcentaje.
+  const pct = num((datos.config || {}).prima_sugerida);
+  return pct > 0 ? Math.round(num(p.precio_crc) * pct / 100 / 100) * 100 : 0;
 }
+
+// Sin token = visitante: solo catálogo y precios.
+function esDueno(){ return !!token(); }
 
 function fotoUrl(p){
   const f = String((p && p.foto) || '');
@@ -331,6 +347,57 @@ function token(){
 }
 function guardarToken(t){
   try { t ? localStorage.setItem(LS.token, t) : localStorage.removeItem(LS.token); } catch(e){}
+}
+
+/* ---------------- roles: dueño vs visitante ---------------- */
+function aplicarRol(){
+  const dueno = esDueno();
+  const privadas = ['vender','cobros','notas','ajustes'];
+  let visibles = 0;
+  document.querySelectorAll('nav button').forEach(b => {
+    const ocultar = !dueno && privadas.indexOf(b.dataset.v) !== -1;
+    b.classList.toggle('oculto', ocultar);
+    if(!ocultar) visibles++;
+  });
+  const nav = document.querySelector('nav');
+  if(nav) nav.style.gridTemplateColumns = 'repeat(' + Math.max(visibles, 1) + ',minmax(0,1fr))';
+  if(!dueno && privadas.indexOf(vista) !== -1) vista = 'stock';
+}
+
+// Acceso discreto para el dueño (visitantes no ven Cobros, Vender ni Ajustes).
+function abrirAcceso(){
+  const w = document.createElement('div');
+  w.className = 'hoja-fondo';
+  w.style.zIndex = 70;
+  w.innerHTML = `<div class="hoja">
+    <div class="agarre"></div>
+    <h2>Acceso del dueño</h2>
+    <div class="sub">Pegá la clave para ver cobros, ventas y ajustes. Queda guardada solo en este teléfono.</div>
+    <label class="f"><span>Clave</span><input id="ac-clave" type="password" placeholder="Clave" autocomplete="new-password"></label>
+    <div class="acciones">
+      <button class="btn" id="ac-ok">Entrar</button>
+      <button class="btn ghost" id="ac-cancel">Cancelar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(w);
+  const cerrar = () => w.remove();
+  w.querySelector('#ac-cancel').onclick = cerrar;
+  w.querySelector('#ac-ok').onclick = async () => {
+    const t = w.querySelector('#ac-clave').value.trim();
+    if(!t) return toast('Pegá la clave', 'error');
+    try {
+      const r = await fetch(API + '?action=movimientos&token=' + encodeURIComponent(t) + '&limite=1&t=' + Date.now());
+      const j = await r.json();
+      if(!j || !j.ok) return toast((j && j.error) || 'La clave no funciona', 'error');
+    } catch(e){ return toast('No se pudo verificar la clave', 'error'); }
+    guardarToken(t);
+    cerrar();
+    aplicarRol();
+    render();
+    await cargarCobros(false);
+    toast('Acceso activado');
+  };
+  setTimeout(() => { const i = w.querySelector('#ac-clave'); if(i) i.focus(); }, 80);
 }
 
 /* ---------------- datos ---------------- */
@@ -437,9 +504,11 @@ async function copiar(txt, msg){
 
 /* ---------------- pantallas ---------------- */
 function render(){
+  aplicarRol();
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('activo', b.dataset.v === vista));
   const app = $('#app');
   if(vista === 'stock') return pintarStock(app);
+  if(vista === 'vender') return pintarVender(app);
   if(vista === 'cobros') return pintarCobros(app);
   if(vista === 'notas') return pintarNotas(app);
   if(vista === 'catalogo') return pintarCatalogo(app);
@@ -463,6 +532,13 @@ function pintarStock(app){
     render();
   });
   pintarLista();
+  if(!esDueno()){
+    const pie = document.createElement('div');
+    pie.style.cssText = 'text-align:center;margin:30px 0 14px';
+    pie.innerHTML = '<button class="btn ghost sm" id="btn-acceso">🔑 Acceso</button>';
+    app.appendChild(pie);
+    pie.querySelector('#btn-acceso').onclick = abrirAcceso;
+  }
 }
 
 function listaFiltrada(){
@@ -490,7 +566,7 @@ function pintarLista(){
   cont.innerHTML = lista.map(p => {
     const st = num(p.stock);
     const foto = fotoUrl(p);
-    const abono = abonoSugerido(p);
+    const prima = primaDe(p);
     return `<div class="prod" data-id="${esc(p.id)}">
       <div class="foto">${foto ? `<img src="${esc(foto)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='./icons/icon-192-v2.png';this.classList.add('logo-fallback')">` : `<img src="./icons/icon-192-v2.png" alt="" class="logo-fallback">`}</div>
       <div class="info">
@@ -500,7 +576,7 @@ function pintarLista(){
           <span class="precio">${money(p.precio_crc)}</span>
           <span class="pagos">2 pagos ${money(p.precio_pagos_crc)}</span>
         </div>
-        ${abono ? `<div class="fila" style="margin-top:3px"><span class="abono">Abono ${primaPct()}%: ${money(abono)}</span></div>` : ''}
+        ${prima ? `<div class="fila" style="margin-top:3px"><span class="abono">Prima: ${money(prima)}</span></div>` : ''}
         <div class="fila" style="margin-top:6px">
           <span class="stock ${st<=0?'cero':''}">${st>0 ? st + ' en stock' : 'Agotado'}</span>
           <span class="tag">${esc(p.categoria||'—')}</span>
@@ -515,6 +591,217 @@ function pintarLista(){
       if(p) abrirProducto(p);
     });
   });
+}
+
+/* ---------------- vender desde el teléfono (solo dueño) ---------------- */
+function isoFecha(y, m, d){
+  const x = new Date(y, m, d, 12, 0, 0);
+  return x.getFullYear() + '-' + String(x.getMonth()+1).padStart(2,'0') + '-' + String(x.getDate()).padStart(2,'0');
+}
+function proximaCuotaISO(){
+  const d = new Date();
+  const y = d.getFullYear(), m = d.getMonth(), dia = d.getDate();
+  return dia < 16 ? isoFecha(y, m, 16) : isoFecha(y, m + 1, 1);
+}
+function totalVenta(p, cant, tipo){
+  const precio = num(p.precio_crc);
+  if(tipo === 'pagos'){
+    const rec = num((datos.config || {}).recargo_pagos);
+    return mil(precio * cant * (1 + rec / 100));
+  }
+  return mil(precio * cant);
+}
+function ventasLocales(){
+  const v = leerLS(LS.ventas, []);
+  return Array.isArray(v) ? v : [];
+}
+function guardarVentasLocales(v){ guardarLS(LS.ventas, v.slice(0, 40)); }
+
+function pintarVender(app){
+  if(!esDueno()){ vista = 'stock'; return render(); }
+  const enStock = datos.inventario.filter(p => num(p.stock) > 0);
+  const opciones = enStock.map(p =>
+    `<option value="${esc(p.id)}">${esc(p.nombre)} — ${money(p.precio_crc)} (${num(p.stock)} u.)</option>`).join('');
+
+  app.innerHTML = `
+    <div class="card">
+      <h3>Vender</h3>
+      <p class="hint" style="margin-bottom:12px">Se anota acá y se confirma en la PC. El stock baja cuando la importás.</p>
+      <label class="f"><span>Perfume</span><select id="v-prod">${opciones || '<option value="">Sin stock</option>'}</select></label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label class="f"><span>Cantidad</span><input id="v-cant" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
+        <label class="f"><span>Pago</span><select id="v-tipo">
+          <option value="contado">Contado</option>
+          <option value="pagos">2 pagos</option>
+          <option value="pagos_sin_recargo">2 pagos sin recargo</option>
+        </select></label>
+      </div>
+      <label class="f"><span>Cliente</span><input id="v-cli" placeholder="Nombre y apellido" autocomplete="off"></label>
+      <label class="f"><span>Teléfono</span><input id="v-tel" type="tel" placeholder="8888 8888" inputmode="tel" autocomplete="off"></label>
+      <div id="v-plan" class="oculto">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <label class="f"><span>Prima</span><input id="v-abono" type="number" min="0" step="100" inputmode="numeric"></label>
+          <label class="f"><span>Primer abono</span><input id="v-fecha" type="date"></label>
+        </div>
+      </div>
+      <label class="f"><span>Nota (opcional)</span><input id="v-nota" placeholder="Ej: entrega el viernes"></label>
+      <div id="v-resumen" class="aviso" style="display:none"></div>
+      <button class="btn" id="v-guardar">Registrar venta</button>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:8px">Anotadas en este teléfono</h3>
+      <div id="v-lista"></div>
+    </div>`;
+
+  const $p = () => datos.inventario.find(x => String(x.id) === $('#v-prod').value);
+  const $cant = () => Math.max(1, Math.round(num($('#v-cant').value)));
+  const $tipo = () => $('#v-tipo').value;
+
+  const actualizar = () => {
+    const p = $p();
+    if(!p) return;
+    const tipo = $tipo();
+    const plan = tipo !== 'contado';
+    $('#v-plan').classList.toggle('oculto', !plan);
+    const cant = $cant();
+    const total = totalVenta(p, cant, tipo);
+    const prima = Math.min(primaDe(p) * cant, total);
+    const abono = $('#v-abono');
+    if(plan && !abono.dataset.tocado) abono.value = prima;
+    if(!plan) abono.value = 0;
+
+    const monto = num(abono.value);
+    const saldo = Math.max(0, total - monto);
+    const cuota = plan ? Math.round(saldo / 2) : 0;
+    const partes = [`<b>Total: ${money(total)}</b>`];
+    if(plan){
+      partes.push(`Prima: ${money(monto)}`);
+      partes.push(`Saldo: ${money(saldo)} en 2 cuotas de ${money(cuota)}`);
+    } else {
+      partes.push('Pago completo');
+    }
+    if(num(p.stock) < cant) partes.push('⚠️ No hay stock suficiente');
+    const res = $('#v-resumen');
+    res.style.display = '';
+    res.innerHTML = partes.join(' · ');
+  };
+
+  ['#v-prod','#v-cant','#v-tipo'].forEach(sel => $(sel).addEventListener('change', () => {
+    const ab = $('#v-abono'); if(ab) ab.dataset.tocado = '';
+    actualizar();
+  }));
+  $('#v-cant').addEventListener('input', actualizar);
+  $('#v-abono').addEventListener('input', e => { e.target.dataset.tocado = '1'; actualizar(); });
+  $('#v-fecha').value = proximaCuotaISO();
+  actualizar();
+
+  $('#v-guardar').onclick = async () => {
+    const t = token();
+    if(!t) return toast('Falta la clave en Acceso', 'error');
+    const p = $p();
+    if(!p) return toast('Elegí un perfume', 'error');
+    const cant = $cant();
+    if(cant > num(p.stock)) return toast(`Solo hay ${num(p.stock)} en stock`, 'error');
+    const cliente = $('#v-cli').value.trim();
+    const tel = $('#v-tel').value.trim();
+    if(!cliente) return toast('Falta el nombre del cliente', 'error');
+    if(!tel) return toast('Falta el teléfono del cliente', 'error');
+    const tipo = $tipo();
+    const total = totalVenta(p, cant, tipo);
+    const abono = tipo === 'contado' ? total : Math.min(num($('#v-abono').value), total);
+    const fecha = tipo === 'contado' ? '' : ($('#v-fecha').value || proximaCuotaISO());
+    const nota = $('#v-nota').value.trim();
+    const etiquetaPago = tipo === 'contado' ? 'contado' : tipo === 'pagos' ? '2 pagos' : '2 pagos sin recargo';
+    // La marca va en la nota para que la PC entienda la venta aunque la hoja
+    // todavía no tenga las columnas nuevas.
+    const marca = '[[KQV:' + JSON.stringify({ tipo_pago: tipo, abono: abono, primera_cuota: fecha }) + ']]';
+
+    const btn = $('#v-guardar');
+    btn.disabled = true;
+    btn.textContent = 'Anotando…';
+    try {
+      const r = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'movimiento', token: t, tipo: 'venta',
+          perfume_id: p.id, perfume: p.nombre, cantidad: cant,
+          cliente: cliente, telefono: tel, monto: total,
+          tipo_pago: tipo, abono: abono, primera_cuota: fecha,
+          nota: ((nota ? nota + ' · ' : '') + 'Venta app · ' + etiquetaPago + ' ' + marca).trim(),
+          dispositivo: 'app-celular'
+        })
+      });
+      const j = await r.json();
+      if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó la venta');
+
+      const lista = ventasLocales();
+      lista.unshift({
+        id: j.id, ts: Date.now(), cliente: cliente, perfume: p.nombre,
+        monto: total, prima: abono, tipo: tipo, estado: 'pendiente'
+      });
+      guardarVentasLocales(lista);
+      $('#v-cli').value = '';
+      $('#v-tel').value = '';
+      $('#v-nota').value = '';
+      const ab = $('#v-abono'); ab.dataset.tocado = '';
+      actualizar();
+      pintarVentasLocales();
+      toast('🧾 Venta anotada — confirmala en la PC');
+    } catch(e){
+      toast(e.message || 'No se pudo anotar', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Registrar venta';
+    }
+  };
+
+  pintarVentasLocales();
+  refrescarEstadoVentas();
+}
+
+function pintarVentasLocales(){
+  const cont = $('#v-lista');
+  if(!cont) return;
+  const lista = ventasLocales();
+  if(!lista.length){
+    cont.innerHTML = '<div class="vacio" style="padding:18px"><span class="em">🧾</span>Todavía no anotaste ninguna venta.</div>';
+    return;
+  }
+  cont.innerHTML = lista.map(v => {
+    const etiqueta = v.tipo === 'pagos' ? '2 pagos' : v.tipo === 'pagos_sin_recargo' ? '2 pagos sin recargo' : 'Contado';
+    const estado = v.estado === 'confirmada'
+      ? '<span class="tag" style="color:var(--green)">✅ confirmada</span>'
+      : '<span class="tag" style="color:var(--gold2)">⏳ pendiente</span>';
+    return `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13.5px;font-weight:600">${esc(v.cliente)}</div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:2px">${esc(v.perfume || '')} · ${etiqueta}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:13.5px;font-weight:700">${money(v.monto)}</div>
+        <div style="margin-top:3px">${estado}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function refrescarEstadoVentas(){
+  const t = token();
+  if(!t) return;
+  try {
+    const r = await fetch(API + '?action=movimientos&estado=pendiente&limite=200&token=' + encodeURIComponent(t) + '&t=' + Date.now());
+    const j = await r.json();
+    if(!j || !j.ok) return;
+    const pend = new Set((j.movimientos || []).map(m => String(m.id)));
+    const lista = ventasLocales();
+    let cambio = false;
+    lista.forEach(v => {
+      const est = pend.has(String(v.id)) ? 'pendiente' : 'confirmada';
+      if(v.estado !== est){ v.estado = est; cambio = true; }
+    });
+    if(cambio){ guardarVentasLocales(lista); pintarVentasLocales(); }
+  } catch(e){ /* sin señal: se queda como estaba */ }
 }
 
 /* ---------------- Imagen tipo "Info" (misma que la web) para WhatsApp ---------------- */
@@ -818,7 +1105,7 @@ function abrirProducto(p){
         <div><small>Contado</small><b>${money(p.precio_crc)}</b></div>
         <div class="p"><small>A 2 pagos</small><b>${money(p.precio_pagos_crc)}</b></div>
       </div>
-      ${abonoSugerido(p) ? `<div class="abono" style="margin:-4px 0 10px">💰 Abono sugerido (${primaPct()}%): <b>${money(abonoSugerido(p))}</b></div>` : ''}
+      ${primaDe(p) ? `<div class="abono" style="margin:-4px 0 10px">💰 Prima: <b>${money(primaDe(p))}</b></div>` : ''}
       ${p.descripcion ? `<div class="cuerpo">${esc(p.descripcion)}</div>` : ''}
       <div class="acciones">
         <button class="btn verde" id="h-wa">📲 Enviar imagen por WhatsApp</button>
@@ -1209,14 +1496,18 @@ function pintarAjustes(app){
   $('#a-guardar').onclick = () => {
     const t = $('#a-token').value.trim();
     guardarToken(t);
+    aplicarRol();
     toast(t ? 'Clave guardada' : 'Clave borrada');
-    if(t && vista === 'cobros') cargarCobros(false);
+    render();
+    if(t) cargarCobros(false);
   };
 
   $('#a-probar').onclick = async () => {
     const t = $('#a-token').value.trim();
     if(!t) return toast('Pegá la clave primero', 'error');
     guardarToken(t);
+    aplicarRol();
+    render();
     toast('Probando…');
     try {
       const r = await fetch(API + '?action=movimientos&token=' + encodeURIComponent(t) + '&limite=1&t=' + Date.now());
@@ -1268,7 +1559,7 @@ window.addEventListener('online', () => { pintarEstado(); });
 window.addEventListener('offline', () => pintarEstado(true));
 window.addEventListener('hashchange', () => {
   const h = location.hash.replace('#','');
-  if(['stock','cobros','notas','catalogo','ajustes'].includes(h) && h !== vista){
+  if(['stock','vender','cobros','notas','catalogo','ajustes'].includes(h) && h !== vista){
     vista = h;
     render();
     if(h === 'cobros') cargarCobros(false);
@@ -1307,7 +1598,7 @@ window.addEventListener('beforeinstallprompt', e => {
   } catch(e){}
 
   const h = location.hash.replace('#','');
-  if(['stock','cobros','notas','catalogo','ajustes'].includes(h)) vista = h;
+  if(['stock','vender','cobros','notas','catalogo','ajustes'].includes(h)) vista = h;
 
   render();
   pintarEstado(!navigator.onLine);
