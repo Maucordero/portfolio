@@ -228,7 +228,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.6.0';
+const VERSION = '1.7.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1' };
@@ -273,7 +273,7 @@ function primaDe(p){
   if(m != null) return num(m);
   // Compatibilidad con catálogos viejos que todavía traen el porcentaje.
   const pct = num((datos.config || {}).prima_sugerida);
-  return pct > 0 ? Math.round(num(p.precio_crc) * pct / 100 / 100) * 100 : 0;
+  return pct > 0 ? mil(num(p.precio_crc) * pct / 100) : 0;
 }
 
 // Sin token = visitante: solo catálogo y precios.
@@ -680,10 +680,18 @@ function pintarVender(app){
         </select></label>
       </div>
       <div id="v-prog" class="oculto">
-        <div class="hint" style="margin-bottom:8px">Pagos programados: elegí la fecha de cada pago (1 a 5). No lleva recargo.</div>
+        <div class="hint" style="margin-bottom:8px">Elegí la fecha de cada abono (1 a 5). No lleva recargo.</div>
+        <label class="f" style="margin-bottom:8px"><span style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px"><input type="checkbox" id="v-prima-check" style="width:auto"> <b>Aviso de prima</b> (no la pagó todavía)</span></label>
+        <div id="v-prima-datos" class="oculto">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <label class="f"><span>Prima ₡</span><input id="v-prima-monto" type="number" min="0" step="500" inputmode="numeric"></label>
+            <label class="f"><span>La paga el</span><input id="v-prima-fecha" type="date"></label>
+          </div>
+        </div>
+        <div class="hint" style="margin:10px 0 6px"><b>Fechas de abono</b> (después de la prima)</div>
         <div id="v-prog-fechas" style="display:grid;gap:8px"></div>
         <div style="display:flex;gap:8px;margin-top:8px">
-          <button class="btn ghost sm" id="v-prog-add" type="button">＋ Pago</button>
+          <button class="btn ghost sm" id="v-prog-add" type="button">＋ Abono</button>
           <button class="btn ghost sm" id="v-prog-del" type="button">− Quitar</button>
         </div>
       </div>
@@ -710,13 +718,51 @@ function pintarVender(app){
     if(!cont) return;
     const hoy = new Date();
     const min = isoFecha(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-    cont.innerHTML = progF.map((f, i) => `
-      <label class="f"><span>Pago ${i + 1}</span><input type="date" class="pf" data-i="${i}" value="${esc(f)}" min="${esc(min)}"></label>`).join('');
+    const n = progF.length;
+    cont.innerHTML = progF.map((f, i) => {
+      const etiqueta = (n > 1 && i === n - 1) ? 'Último abono' : `Abono ${i + 1}`;
+      return `<label class="f"><span>${etiqueta}</span><input type="date" class="pf" data-i="${i}" value="${esc(f)}" min="${esc(min)}"></label>`;
+    }).join('');
     cont.querySelectorAll('.pf').forEach(inp => {
       const act = () => { progF[Number(inp.dataset.i)] = inp.value; actualizar(); };
       inp.addEventListener('input', act);
       inp.addEventListener('change', act);
     });
+  };
+
+  const leerPrima = () => {
+    const chk = $('#v-prima-check');
+    if(!chk || !chk.checked) return null;
+    const monto = Math.max(0, Math.round(num($('#v-prima-monto').value)));
+    const fecha = $('#v-prima-fecha').value || '';
+    if(!(monto > 0) || !fecha) return null;
+    return { monto, fecha };
+  };
+  const togglePrima = () => {
+    const chk = $('#v-prima-check');
+    const box = $('#v-prima-datos');
+    if(!chk || !box) return;
+    box.classList.toggle('oculto', !chk.checked);
+    if(chk.checked){
+      const p = $p();
+      if(p && !(num($('#v-prima-monto').value) > 0)) $('#v-prima-monto').value = mil(primaDe(p) * $cant());
+      if(!$('#v-prima-fecha').value) $('#v-prima-fecha').value = proximaCuotaISO();
+      // La prima todavía no la pagó: "Me da ahora" arranca en 0.
+      const ab = $('#v-abono');
+      if(ab){ ab.value = 0; ab.dataset.tocado = '1'; }
+      ajustarAbonosPrimaCel();
+    }
+    actualizar();
+  };
+  const ajustarAbonosPrimaCel = () => {
+    const chk = $('#v-prima-check');
+    const f = $('#v-prima-fecha');
+    if(!chk || !chk.checked || !f.value) return;
+    if(!progF.length || progF[0] <= f.value){
+      const sig = cuotasProg(f.value, 2)[1];
+      progF = cuotasProg(sig || f.value, 2);
+      renderProg();
+    }
   };
 
   const actualizar = () => {
@@ -727,6 +773,7 @@ function pintarVender(app){
     $('#v-prog').classList.toggle('oculto', !esProg);
     if(esProg && !document.querySelector('#v-prog-fechas .pf')) renderProg();
     const prog = esProg ? leerProg() : [];
+    const primaAviso = esProg ? leerPrima() : null;
     const planN = esProg ? prog.length : planDe(tipo);
     const esPlan = esProg || planN > 0;
     const cant = $cant();
@@ -738,11 +785,11 @@ function pintarVender(app){
 
     const puedePrimer = esProg ? prog.length >= 1 : planN >= 2;
     const modoWrap = $('#v-modo-wrap');
-    if(modoWrap) modoWrap.classList.toggle('oculto', !puedePrimer);
+    if(modoWrap) modoWrap.classList.toggle('oculto', !puedePrimer || esProg);
 
     const abono = $('#v-abono');
     if(!esPlan) abono.value = 0;
-    else if(!abono.dataset.tocado) abono.value = Math.min(primaDe(p) * cant, total);
+    else if(!abono.dataset.tocado && !(esProg && primaAviso)) abono.value = Math.min(primaDe(p) * cant, total);
 
     const monto = esPlan ? Math.min(num(abono.value), total) : total;
     const resto = Math.max(0, total - monto);
@@ -753,11 +800,20 @@ function pintarVender(app){
     const cuota = nCuotas > 0 ? Math.round(resto / nCuotas) : 0;
 
     const partes = [`<b>Total: ${money(total)}</b>`];
-    if(esPlan){
+    if(esProg){
+      const primaM = primaAviso ? primaAviso.monto : 0;
+      const restoP = Math.max(0, total - monto - primaM);
+      const n = prog.length;
+      const cuotaP = n > 0 ? Math.round(restoP / n) : 0;
+      if(monto > 0) partes.push(`Ahora: ${money(monto)}`);
+      if(primaAviso) partes.push(`Aviso prima: ${money(primaM)} el ${fechaCortaCel(primaAviso.fecha)}`);
+      if(n > 0) partes.push(`Saldo ${money(restoP)} en ${n} abono${n === 1 ? '' : 's'} de ${money(cuotaP)}`);
+      else partes.push('Elegí al menos una fecha de abono');
+      if(n > 0) partes.push(prog.map(fechaCortaCel).join(' · '));
+    } else if(esPlan){
       partes.push(`${esPrimer ? '1er pago' : 'Prima'}: ${money(monto)}`);
       if(nCuotas > 0){
         partes.push(`Saldo ${money(resto)} en ${nCuotas} pago${nCuotas === 1 ? '' : 's'} de ${money(cuota)}`);
-        if(esProg && prog.length) partes.push(prog.map(fechaCortaCel).join(' · '));
       } else {
         partes.push('Queda pagada');
       }
@@ -793,6 +849,9 @@ function pintarVender(app){
     renderProg();
     actualizar();
   };
+  $('#v-prima-check').addEventListener('change', togglePrima);
+  $('#v-prima-monto').addEventListener('input', actualizar);
+  $('#v-prima-fecha').addEventListener('change', () => { ajustarAbonosPrimaCel(); actualizar(); });
   actualizar();
 
   $('#v-guardar').onclick = async () => {
@@ -809,7 +868,8 @@ function pintarVender(app){
     const tipo = $tipo();
     const esProg = tipo === 'programado';
     const prog = esProg ? leerProg() : [];
-    if(esProg && !prog.length) return toast('Elegí al menos una fecha de pago', 'error');
+    const primaAviso = esProg ? leerPrima() : null;
+    if(esProg && !prog.length) return toast('Elegí al menos una fecha de abono', 'error');
     const planN = esProg ? prog.length : planDe(tipo);
     const esPlan = esProg || planN > 0;
     const total = totalVenta(p, cant, tipo);
@@ -822,7 +882,7 @@ function pintarVender(app){
     const etiquetaPago = { contado:'contado', pagos:'2 pagos', pagos3:'3 pagos', pagos4:'4 pagos', pagos5:'5 pagos', pagos_sin_recargo:'2 pagos sin recargo', un_pago_abono:'1 pago con abono', programado:'programado' }[tipo] || tipo;
     // La marca va en la nota para que la PC entienda la venta aunque la hoja
     // todavía no tenga las columnas nuevas.
-    const marca = '[[KQV:' + JSON.stringify({ tipo_pago: tipo, abono: abono, primera_cuota: fecha, abono_modo: modo, referencia: referencia, fechas: esProg ? prog : undefined }) + ']]';
+    const marca = '[[KQV:' + JSON.stringify({ tipo_pago: tipo, abono: abono, primera_cuota: fecha, abono_modo: modo, referencia: referencia, fechas: esProg ? prog : undefined, prima_aviso: primaAviso || undefined }) + ']]';
 
     const btn = $('#v-guardar');
     btn.disabled = true;
@@ -855,6 +915,10 @@ function pintarVender(app){
       $('#v-ref').value = '';
       const ab = $('#v-abono'); ab.dataset.tocado = '';
       progF = progDefaultFechasCel();
+      $('#v-prima-check').checked = false;
+      $('#v-prima-monto').value = '';
+      $('#v-prima-fecha').value = '';
+      $('#v-prima-datos').classList.add('oculto');
       actualizar();
       pintarVentasLocales();
       toast('🧾 Venta anotada — entra sola al sistema');
@@ -878,7 +942,7 @@ function pintarVentasLocales(){
     cont.innerHTML = '<div class="vacio" style="padding:18px"><span class="em">🧾</span>Todavía no anotaste ninguna venta.</div>';
     return;
   }
-  cont.innerHTML = lista.map(v => {
+  cont.innerHTML = lista.map((v, i) => {
     const etiqueta = { contado:'Contado', pagos:'2 pagos', pagos3:'3 pagos', pagos4:'4 pagos', pagos5:'5 pagos', pagos_sin_recargo:'2 pagos sin recargo', un_pago_abono:'1 pago con abono', programado:'programado' }[v.tipo] || v.tipo;
     const estado = v.estado === 'confirmada'
       ? '<span class="tag" style="color:var(--green)">✅ en el sistema</span>'
@@ -892,8 +956,24 @@ function pintarVentasLocales(){
         <div style="font-size:13.5px;font-weight:700">${money(v.monto)}</div>
         <div style="margin-top:3px">${estado}</div>
       </div>
+      <button class="btn ghost sm" data-borrar-venta="${i}" title="Borrar esta venta de la lista del teléfono">🗑</button>
     </div>`;
   }).join('');
+
+  cont.querySelectorAll('[data-borrar-venta]').forEach(b => {
+    b.onclick = () => borrarVentaLocal(Number(b.dataset.borrarVenta));
+  });
+}
+
+function borrarVentaLocal(i){
+  const lista = ventasLocales();
+  const v = lista[i];
+  if(!v) return;
+  if(!confirm(`¿Borrar la venta de ${v.cliente} de este teléfono?\n\nNo toca el sistema de la PC.`)) return;
+  lista.splice(i, 1);
+  guardarVentasLocales(lista);
+  pintarVentasLocales();
+  toast('🗑 Venta borrada de este teléfono');
 }
 
 async function refrescarEstadoVentas(){
