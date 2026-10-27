@@ -228,7 +228,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1' };
@@ -603,13 +603,19 @@ function proximaCuotaISO(){
   const y = d.getFullYear(), m = d.getMonth(), dia = d.getDate();
   return dia < 16 ? isoFecha(y, m, 16) : isoFecha(y, m + 1, 1);
 }
+function planDe(tipo){
+  return ({ pagos:2, pagos_sin_recargo:2, un_pago_abono:1, pagos3:3, pagos4:4, pagos5:5 })[tipo] || 0;
+}
+function recargoDe(tipo){
+  const n = planDe(tipo);
+  if(!n || tipo === 'pagos_sin_recargo' || tipo === 'un_pago_abono') return 0;
+  const c = datos.config || {};
+  const v = num(c['recargo_p' + n]);
+  if(v > 0) return v;
+  return n === 2 ? num(c.recargo_pagos) : 0;
+}
 function totalVenta(p, cant, tipo){
-  const precio = num(p.precio_crc);
-  if(tipo === 'pagos'){
-    const rec = num((datos.config || {}).recargo_pagos);
-    return mil(precio * cant * (1 + rec / 100));
-  }
-  return mil(precio * cant);
+  return mil(num(p.precio_crc) * cant * (1 + recargoDe(tipo) / 100));
 }
 function ventasLocales(){
   const v = leerLS(LS.ventas, []);
@@ -626,24 +632,33 @@ function pintarVender(app){
   app.innerHTML = `
     <div class="card">
       <h3>Vender</h3>
-      <p class="hint" style="margin-bottom:12px">Se anota acá y se confirma en la PC. El stock baja cuando la importás.</p>
+      <p class="hint" style="margin-bottom:12px">Se anota acá y <b>entra sola al sistema</b> en menos de un minuto (si la PC está encendida). Si la PC está apagada, queda esperando y entra cuando la prendas.</p>
       <label class="f"><span>Perfume</span><select id="v-prod">${opciones || '<option value="">Sin stock</option>'}</select></label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <label class="f"><span>Cantidad</span><input id="v-cant" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
         <label class="f"><span>Pago</span><select id="v-tipo">
           <option value="contado">Contado</option>
-          <option value="pagos">2 pagos</option>
-          <option value="pagos_sin_recargo">2 pagos sin recargo</option>
+          <option value="pagos">A 2 pagos</option>
+          <option value="pagos3">A 3 pagos</option>
+          <option value="pagos4">A 4 pagos</option>
+          <option value="pagos5">A 5 pagos</option>
+          <option value="pagos_sin_recargo">A 2 pagos sin recargo</option>
+          <option value="un_pago_abono">A 1 pago con abono</option>
         </select></label>
       </div>
       <label class="f"><span>Cliente</span><input id="v-cli" placeholder="Nombre y apellido" autocomplete="off"></label>
       <label class="f"><span>Teléfono</span><input id="v-tel" type="tel" placeholder="8888 8888" inputmode="tel" autocomplete="off"></label>
       <div id="v-plan" class="oculto">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <label class="f"><span>Prima</span><input id="v-abono" type="number" min="0" step="100" inputmode="numeric"></label>
+          <label class="f"><span>Me da ahora</span><input id="v-abono" type="number" min="0" step="100" inputmode="numeric"></label>
           <label class="f"><span>Primer abono</span><input id="v-fecha" type="date"></label>
         </div>
+        <label class="f" id="v-modo-wrap"><span>Eso es</span><select id="v-modo">
+          <option value="inicial">Abono inicial (adelanto)</option>
+          <option value="primer_pago">Primer abono (pago 1)</option>
+        </select></label>
       </div>
+      <label class="f"><span>Referencia (solo para vos)</span><input id="v-ref" placeholder="Ej: chofer Pany" autocomplete="off"></label>
       <label class="f"><span>Nota (opcional)</span><input id="v-nota" placeholder="Ej: entrega el viernes"></label>
       <div id="v-resumen" class="aviso" style="display:none"></div>
       <button class="btn" id="v-guardar">Registrar venta</button>
@@ -661,22 +676,31 @@ function pintarVender(app){
     const p = $p();
     if(!p) return;
     const tipo = $tipo();
-    const plan = tipo !== 'contado';
-    $('#v-plan').classList.toggle('oculto', !plan);
+    const planN = planDe(tipo);
+    const esPlan = planN > 0;
     const cant = $cant();
     const total = totalVenta(p, cant, tipo);
-    const prima = Math.min(primaDe(p) * cant, total);
-    const abono = $('#v-abono');
-    if(plan && !abono.dataset.tocado) abono.value = prima;
-    if(!plan) abono.value = 0;
 
-    const monto = num(abono.value);
-    const saldo = Math.max(0, total - monto);
-    const cuota = plan ? Math.round(saldo / 2) : 0;
+    $('#v-plan').classList.toggle('oculto', !esPlan);
+    const modoWrap = $('#v-modo-wrap');
+    if(modoWrap) modoWrap.classList.toggle('oculto', planN < 2);
+
+    const abono = $('#v-abono');
+    if(!esPlan) abono.value = 0;
+    else if(!abono.dataset.tocado) abono.value = Math.min(primaDe(p) * cant, total);
+
+    const monto = esPlan ? Math.min(num(abono.value), total) : total;
+    const resto = Math.max(0, total - monto);
+    const modo = $('#v-modo') ? $('#v-modo').value : 'inicial';
+    const esPrimer = esPlan && planN >= 2 && modo === 'primer_pago' && monto > 0;
+    const nCuotas = !esPlan ? 0 : (planN === 1 ? 1 : (esPrimer ? planN - 1 : planN));
+    const cuota = nCuotas > 0 ? Math.round(resto / nCuotas) : 0;
+
     const partes = [`<b>Total: ${money(total)}</b>`];
-    if(plan){
-      partes.push(`Prima: ${money(monto)}`);
-      partes.push(`Saldo: ${money(saldo)} en 2 cuotas de ${money(cuota)}`);
+    if(esPlan){
+      partes.push(`${esPrimer ? '1er pago' : 'Prima'}: ${money(monto)}`);
+      if(nCuotas > 0) partes.push(`Saldo ${money(resto)} en ${nCuotas} pago${nCuotas === 1 ? '' : 's'} de ${money(cuota)}`);
+      else partes.push('Queda pagada');
     } else {
       partes.push('Pago completo');
     }
@@ -686,10 +710,13 @@ function pintarVender(app){
     res.innerHTML = partes.join(' · ');
   };
 
-  ['#v-prod','#v-cant','#v-tipo'].forEach(sel => $(sel).addEventListener('change', () => {
-    const ab = $('#v-abono'); if(ab) ab.dataset.tocado = '';
-    actualizar();
-  }));
+  ['#v-prod','#v-cant','#v-tipo','#v-modo'].forEach(sel => {
+    const el = $(sel); if(!el) return;
+    el.addEventListener('change', () => {
+      const ab = $('#v-abono'); if(ab) ab.dataset.tocado = '';
+      actualizar();
+    });
+  });
   $('#v-cant').addEventListener('input', actualizar);
   $('#v-abono').addEventListener('input', e => { e.target.dataset.tocado = '1'; actualizar(); });
   $('#v-fecha').value = proximaCuotaISO();
@@ -707,14 +734,18 @@ function pintarVender(app){
     if(!cliente) return toast('Falta el nombre del cliente', 'error');
     if(!tel) return toast('Falta el teléfono del cliente', 'error');
     const tipo = $tipo();
+    const planN = planDe(tipo);
+    const esPlan = planN > 0;
     const total = totalVenta(p, cant, tipo);
-    const abono = tipo === 'contado' ? total : Math.min(num($('#v-abono').value), total);
-    const fecha = tipo === 'contado' ? '' : ($('#v-fecha').value || proximaCuotaISO());
+    const abono = esPlan ? Math.min(num($('#v-abono').value), total) : total;
+    const fecha = esPlan ? ($('#v-fecha').value || proximaCuotaISO()) : '';
+    const modo = (planN >= 2 && $('#v-modo').value === 'primer_pago' && abono > 0) ? 'primer_pago' : 'inicial';
     const nota = $('#v-nota').value.trim();
-    const etiquetaPago = tipo === 'contado' ? 'contado' : tipo === 'pagos' ? '2 pagos' : '2 pagos sin recargo';
+    const referencia = $('#v-ref').value.trim();
+    const etiquetaPago = { contado:'contado', pagos:'2 pagos', pagos3:'3 pagos', pagos4:'4 pagos', pagos5:'5 pagos', pagos_sin_recargo:'2 pagos sin recargo', un_pago_abono:'1 pago con abono' }[tipo] || tipo;
     // La marca va en la nota para que la PC entienda la venta aunque la hoja
     // todavía no tenga las columnas nuevas.
-    const marca = '[[KQV:' + JSON.stringify({ tipo_pago: tipo, abono: abono, primera_cuota: fecha }) + ']]';
+    const marca = '[[KQV:' + JSON.stringify({ tipo_pago: tipo, abono: abono, primera_cuota: fecha, abono_modo: modo, referencia: referencia }) + ']]';
 
     const btn = $('#v-guardar');
     btn.disabled = true;
@@ -727,7 +758,7 @@ function pintarVender(app){
           action: 'movimiento', token: t, tipo: 'venta',
           perfume_id: p.id, perfume: p.nombre, cantidad: cant,
           cliente: cliente, telefono: tel, monto: total,
-          tipo_pago: tipo, abono: abono, primera_cuota: fecha,
+          tipo_pago: tipo, abono: abono, primera_cuota: fecha, abono_modo: modo, referencia: referencia,
           nota: ((nota ? nota + ' · ' : '') + 'Venta app · ' + etiquetaPago + ' ' + marca).trim(),
           dispositivo: 'app-celular'
         })
@@ -738,16 +769,17 @@ function pintarVender(app){
       const lista = ventasLocales();
       lista.unshift({
         id: j.id, ts: Date.now(), cliente: cliente, perfume: p.nombre,
-        monto: total, prima: abono, tipo: tipo, estado: 'pendiente'
+        monto: total, prima: abono, tipo: tipo, modo: modo, estado: 'pendiente'
       });
       guardarVentasLocales(lista);
       $('#v-cli').value = '';
       $('#v-tel').value = '';
       $('#v-nota').value = '';
+      $('#v-ref').value = '';
       const ab = $('#v-abono'); ab.dataset.tocado = '';
       actualizar();
       pintarVentasLocales();
-      toast('🧾 Venta anotada — confirmala en la PC');
+      toast('🧾 Venta anotada — entra sola al sistema');
     } catch(e){
       toast(e.message || 'No se pudo anotar', 'error');
     } finally {
@@ -769,10 +801,10 @@ function pintarVentasLocales(){
     return;
   }
   cont.innerHTML = lista.map(v => {
-    const etiqueta = v.tipo === 'pagos' ? '2 pagos' : v.tipo === 'pagos_sin_recargo' ? '2 pagos sin recargo' : 'Contado';
+    const etiqueta = { contado:'Contado', pagos:'2 pagos', pagos3:'3 pagos', pagos4:'4 pagos', pagos5:'5 pagos', pagos_sin_recargo:'2 pagos sin recargo', un_pago_abono:'1 pago con abono' }[v.tipo] || v.tipo;
     const estado = v.estado === 'confirmada'
-      ? '<span class="tag" style="color:var(--green)">✅ confirmada</span>'
-      : '<span class="tag" style="color:var(--gold2)">⏳ pendiente</span>';
+      ? '<span class="tag" style="color:var(--green)">✅ en el sistema</span>'
+      : '<span class="tag" style="color:var(--gold2)">⏳ esperando la PC</span>';
     return `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)">
       <div style="flex:1;min-width:0">
         <div style="font-size:13.5px;font-weight:600">${esc(v.cliente)}</div>
@@ -1257,12 +1289,72 @@ function guardarNotas(){
   guardarLS(LS.notas, notas);
 }
 
+async function subirNotaAuto(n){
+  if(!n || n.subida) return true;
+  const t = token();
+  if(!t){ n.error = 'Falta la clave'; return false; }
+  try {
+    const r = await fetch(API, {
+      method:'POST',
+      headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action:'aviso', token:t, texto:n.texto, fecha:new Date(n.ts).toISOString(), dispositivo:'app-celular' })
+    });
+    const j = await r.json();
+    if(j && j.ok){ n.subida = true; n.idRemoto = j.id; n.error = ''; guardarNotas(); return true; }
+    n.error = (j && j.error) || 'Google rechazó la nota';
+  } catch(e){
+    n.error = e.message || 'Sin señal';
+  }
+  guardarNotas();
+  return false;
+}
+
+async function subirNotasPendientes(silencioso){
+  if(!token()) return;
+  const pend = notas.filter(n => !n.subida);
+  if(!pend.length) return;
+  let ok = 0;
+  for(const n of pend){
+    if(await subirNotaAuto(n)) ok++;
+    else break;
+  }
+  guardarNotas();
+  if(vista === 'notas') pintarListaNotas();
+  if(ok) toast(`☁️ ${ok} nota${ok===1?'':'s'} subida${ok===1?'':'s'} a la PC`);
+  else if(!silencioso) toast('No se pudo subir: ' + mensajeGoogle(pend[0] && pend[0].error), 'error');
+}
+
 function pintarNotas(app){
+  if(!esDueno()){ vista = 'stock'; return render(); }
   const pendientes = notas.filter(n => !n.subida).length;
   app.innerHTML = `
     <div class="card">
+      <h3>Pedir un perfume</h3>
+      <p class="hint" style="margin-bottom:10px">Llega a la PC como pedido. Ahí lo revisás y lo cargás al inventario.</p>
+      <label class="f"><span>Perfume</span><input id="p-nombre" placeholder="Ej: Eros Flame" autocomplete="off"></label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label class="f"><span>Marca</span><input id="p-marca" placeholder="Versace" autocomplete="off"></label>
+        <label class="f"><span>ml</span><input id="p-ml" type="number" min="1" inputmode="numeric"></label>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label class="f"><span>Género</span><select id="p-cat">
+          <option value="">Elegí...</option><option>Hombre</option><option>Mujer</option><option>Unisex</option>
+        </select></label>
+        <label class="f"><span>Concentración</span><select id="p-conc">
+          <option value="">Elegí...</option><option>EDT</option><option>EDP</option><option>Parfum</option>
+          <option>Elixir</option><option>Extrait</option><option value="__no__">No aplica</option>
+        </select></label>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label class="f"><span>Costo USD</span><input id="p-usd" type="number" step="0.01" inputmode="decimal"></label>
+        <label class="f"><span>Cantidad</span><input id="p-cant" type="number" min="1" value="1" inputmode="numeric"></label>
+      </div>
+      <button class="btn" id="p-enviar">Enviar pedido a la PC</button>
+    </div>
+
+    <div class="card">
       <h3>Nueva nota</h3>
-      <p class="hint" style="margin-bottom:10px">Queda guardada en el teléfono. <b>No</b> toca el inventario ni las ventas.</p>
+      <p class="hint" style="margin-bottom:10px">Se sube sola a la PC y aparece <b>arriba en Inventario</b>. <b>No</b> toca el inventario ni las ventas.</p>
       <textarea id="n-texto" rows="4" placeholder="Ej: David abonó ₡10.000, revisar el 1…"></textarea>
       <div style="display:grid;gap:8px;margin-top:10px">
         <button class="btn" id="n-guardar">Guardar nota</button>
@@ -1277,43 +1369,66 @@ function pintarNotas(app){
       <div id="n-lista"></div>
     </div>`;
 
-  $('#n-guardar').onclick = () => {
+  $('#n-guardar').onclick = async () => {
     const t = $('#n-texto').value.trim();
     if(!t) return toast('Escribí la nota primero', 'error');
-    notas.unshift({
+    const nota = {
       local: Date.now() + '-' + Math.random().toString(36).slice(2,6),
       ts: Date.now(),
       texto: t,
       subida: false,
       idRemoto: null
-    });
+    };
+    notas.unshift(nota);
     guardarNotas();
-    render();
-    toast('Nota guardada en el teléfono');
+    $('#n-texto').value = '';
+    if(vista === 'notas') render();
+    const ok = await subirNotaAuto(nota);
+    if(vista === 'notas') render();
+    toast(ok ? '☁️ Nota subida: ya se ve en la PC' : '📝 Guardada en el teléfono (se sube sola con señal)', ok ? '' : 'error');
+  };
+
+  $('#p-enviar').onclick = async () => {
+    const t = token();
+    if(!t) return toast('Falta la clave en Acceso', 'error');
+    const nombre = $('#p-nombre').value.trim();
+    if(!nombre) return toast('Escribí el nombre del perfume', 'error');
+    const pd = {
+      marca: $('#p-marca').value.trim(),
+      categoria: $('#p-cat').value,
+      concentracion: $('#p-conc').value === '__no__' ? '' : $('#p-conc').value,
+      ml: Math.round(num($('#p-ml').value)) || 0,
+      costo_usd: num($('#p-usd').value) || 0,
+      cantidad: Math.max(1, Math.round(num($('#p-cant').value) || 1))
+    };
+    const marca = '[[KQV:' + JSON.stringify(Object.assign({ pedido: true }, pd)) + ']]';
+    const btn = $('#p-enviar');
+    btn.disabled = true; btn.textContent = 'Enviando…';
+    try {
+      const r = await fetch(API, {
+        method:'POST',
+        headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action:'movimiento', token:t, tipo:'pedido',
+          perfume: nombre, cantidad: pd.cantidad,
+          nota: 'Pedido desde el celular ' + marca,
+          dispositivo:'app-celular'
+        })
+      });
+      const j = await r.json();
+      if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó el pedido');
+      toast('📦 Pedido enviado: revisalo en la PC');
+      ['p-nombre','p-marca','p-ml','p-usd'].forEach(id => $('#'+id).value = '');
+      $('#p-cat').value = ''; $('#p-conc').value = ''; $('#p-cant').value = 1;
+    } catch(e){
+      toast(e.message || 'No se pudo enviar', 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Enviar pedido a la PC';
+    }
   };
 
   if(pendientes){
-    $('#n-subir-todas').onclick = async () => {
-      const t = token();
-      if(!t) return toast('Poné la clave en Ajustes', 'error');
-      let ok = 0;
-      let ultimoError = null;
-      for(const n of notas.filter(x => !x.subida)){
-        try {
-          const r = await fetch(API, {
-            method:'POST',
-            headers:{ 'Content-Type':'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action:'aviso', token:t, texto:n.texto, fecha:new Date(n.ts).toISOString(), dispositivo:'app-celular' })
-          });
-          const j = await r.json();
-          if(j && j.ok){ n.subida = true; n.idRemoto = j.id; ok++; }
-          else ultimoError = (j && j.error) || 'Google rechazó la nota';
-        } catch(e){ ultimoError = e; break; }
-      }
-      guardarNotas();
-      render();
-      toast(ok ? `☁️ ${ok} nota${ok===1?'':'s'} subida${ok===1?'':'s'}` : 'No se pudo subir: ' + mensajeGoogle(ultimoError), ok ? '' : 'error');
-    };
+    $('#n-subir-todas').onclick = () => subirNotasPendientes(false);
   }
 
   pintarListaNotas();
@@ -1331,7 +1446,7 @@ function pintarListaNotas(){
     return `<div class="mini" style="align-items:flex-start">
       <div class="c">
         <b style="white-space:pre-wrap;font-weight:500;font-size:13.5px">${esc(n.texto)}</b>
-        <small>${esc(f)} · ${n.subida ? '✅ en Google' : '⏳ solo en el teléfono'}</small>
+        <small>${esc(f)} · ${n.subida ? '✅ en la PC' : '⏳ esperando subir'}${n.error ? ' · ' + esc(n.error) : ''}</small>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
         <button class="btn ghost sm" data-wa="${i}" title="Mandar a mi WhatsApp">📲</button>
@@ -1345,7 +1460,13 @@ function pintarListaNotas(){
     b.onclick = () => enviarNotaWhatsApp(notas[Number(b.dataset.wa)]);
   });
   cont.querySelectorAll("[data-subir]").forEach(b => {
-    b.onclick = () => subirNota(notas[Number(b.dataset.subir)], b);
+    b.onclick = async () => {
+      const n = notas[Number(b.dataset.subir)];
+      b.disabled = true; b.textContent = '…';
+      const ok = await subirNotaAuto(n);
+      if(vista === 'notas') pintarListaNotas();
+      toast(ok ? '☁️ Nota subida a la PC' : 'No se pudo subir: ' + mensajeGoogle(n && n.error), ok ? '' : 'error');
+    };
   });
   cont.querySelectorAll("[data-borrar]").forEach(b => {
     b.onclick = () => borrarNota(Number(b.dataset.borrar));
@@ -1470,7 +1591,7 @@ function pintarAjustes(app){
     <div class="card">
       <h3>Cómo funciona</h3>
       <p class="hint">
-        Esta app <b>muestra el catálogo</b> y, con la clave, <b>anota ventas</b>. El stock y los cobros se confirman en la PC.<br><br>
+        Esta app <b>muestra el catálogo</b> y, con la clave, <b>registra ventas</b>. Las ventas entran solas al sistema en menos de un minuto (si la PC está encendida).<br><br>
         La PC publica sola los cambios, y esta app los ve al abrir o al tocar ⟳.<br><br>
         Sin clave, la app es solo para mirar: no muestra cobros, ventas ni ajustes.
       </p>
@@ -1603,8 +1724,10 @@ window.addEventListener('beforeinstallprompt', e => {
   pintarEstado(!navigator.onLine);
 
   sincronizar(true).then(() => {
-    if(token()) cargarCobros(false);
+    if(token()) { cargarCobros(false); subirNotasPendientes(true); }
   });
+  window.addEventListener('online', () => { if(token()) subirNotasPendientes(true); });
+  setInterval(() => { if(token() && notas.some(n => !n.subida)) subirNotasPendientes(true); }, 60000);
 
   if('serviceWorker' in navigator){
     window.addEventListener('load', () => {
