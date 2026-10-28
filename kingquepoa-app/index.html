@@ -228,7 +228,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.8.0';
+const VERSION = '1.9.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1' };
@@ -1094,7 +1094,7 @@ async function enviarImagenWhatsApp(p){
   let blob = null;
   try { blob = await imagenInfo(p); } catch(e){ blob = null; }
   if(!blob){
-    await copiarTexto(textoInfo(p), '📋 Sin foto: copié el texto');
+    await copiar(textoInfo(p), '📋 Sin foto: copié el texto');
     return;
   }
   await entregarImagen(blob, '🖼 Imagen copiada — abrí WhatsApp y pegala');
@@ -1116,85 +1116,235 @@ function guardarImagenEnTelefono(blob){
   }
 }
 
-// Recordatorio de pago como IMAGEN (mismo estilo que la web): logo, cliente, producto,
-// próximo abono con fecha y monto, saldo y datos de SINPE.
-async function imagenCobro(c){
+/* ---------------- factura de cobro (igual a la de la PC) ---------------- */
+const MESES_LARGOS = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const DIAS_LARGOS = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+function fmtFechaLarga(s){
+  const v = String(s || '').slice(0, 10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v)) return '—';
+  const [y, m, d] = v.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return `${DIAS_LARGOS[dt.getDay()]} ${String(d).padStart(2,'0')}-${MESES_LARGOS[m-1]}-${y}`;
+}
+function fmtFechaCorta(s){
+  const v = String(s || '').slice(0, 10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v)) return '—';
+  return v.split('-').reverse().join('/');
+}
+function hoyISO(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function primerNombreDe(nombre){
+  return String(nombre || '').trim().split(/\s+/)[0] || '';
+}
+
+// Plan de pagos de una venta: la PC lo manda en la columna "cuotas" de COBROS.
+const _cuotasCache = new WeakMap();
+function cuotasDe(v){
+  if(v && typeof v === 'object' && _cuotasCache.has(v)) return _cuotasCache.get(v);
+  let arr = [];
+  const raw = v && v.cuotas;
+  if(Array.isArray(raw)) arr = raw;
+  else if(typeof raw === 'string' && raw.trim()){
+    try { const j = JSON.parse(raw); if(Array.isArray(j)) arr = j; } catch(e){ /* formato viejo */ }
+  }
+  const out = arr.map((x, i) => ({
+    numero: num(x.n || x.numero) || (i + 1),
+    monto: num(x.m != null ? x.m : x.monto),
+    vencimiento: String(x.f || x.vencimiento || '').slice(0, 10),
+    pagada: !!(x.p != null ? num(x.p) : x.pagada),
+    tipo: String(x.t || x.tipo || 'abono')
+  }));
+  if(v && typeof v === 'object') _cuotasCache.set(v, out);
+  return out;
+}
+// Misma etiqueta que usa la PC: Aviso de prima / Abono 1 / Último abono.
+function etiquetaCuota(v, cuotas, i){
+  const c = cuotas[i];
+  if(!c) return '';
+  const total = cuotas.length;
+  const tienePrima = cuotas.some(x => x && x.tipo === 'prima');
+  if(c.tipo === 'prima') return 'Aviso de prima';
+  if(String(v && v.tipo_pago) === 'programado' || tienePrima){
+    if(total && i === total - 1) return 'Último abono';
+    let n = 0;
+    for(let j = 0; j <= i; j++) if(cuotas[j] && cuotas[j].tipo !== 'prima') n++;
+    return 'Abono ' + Math.max(1, n);
+  }
+  return (total && i === total - 1) ? 'Último pago' : 'Pago ' + (i + 1);
+}
+// La foto del perfume: la que manda la PC o, si no, la del catálogo que ya tiene la app.
+function claveProd(s){
+  return norm(s).replace(/[^a-z0-9]/g, '');
+}
+function productoDeCobro(v){
+  const id = String((v && v.producto_id) || '');
+  if(id){
+    const porId = datos.inventario.find(x => String(x.id) === id);
+    if(porId) return porId;
+  }
+  const n = claveProd(v && v.producto);
+  if(!n) return null;
+  let p = datos.inventario.find(x => claveProd(x.nombre) === n);
+  if(!p) p = datos.inventario.find(x => {
+    const k = claveProd(x.nombre);
+    return k.includes(n) || n.includes(k);
+  });
+  return p || null;
+}
+function fotoDeCobro(v){
+  const p = productoDeCobro(v);
+  const foto = String((v && v.foto) || (p && p.foto) || '');
+  return foto ? { foto: foto } : null;
+}
+async function cargarBitmap(url){
+  try {
+    const r = await fetch(url, { cache: 'force-cache' });
+    if(!r.ok) return null;
+    const b = await r.blob();
+    if(!/^image\//.test(b.type)) return null;
+    return await createImageBitmap(b);
+  } catch(e){ return null; }
+}
+// Toca una fila de Cobros: el ticket sale con TODAS las ventas pendientes del cliente,
+// con foto y con el plan de pagos completo, igual que el botón 📲 de la PC.
+function clienteDeCobro(c){
+  const nombre = String((c && c.cliente) || '').trim();
+  const tel = String((c && c.telefono) || '').replace(/\D/g,'');
+  let ventas = cobros.filter(x => nombre
+    ? norm(x.cliente) === norm(nombre)
+    : (tel && String(x.telefono || '').replace(/\D/g,'') === tel));
+  if(!ventas.length) ventas = [c];
+  ventas = ventas.slice().sort((a,b) => String(a.fecha_venta || '').localeCompare(String(b.fecha_venta || '')));
+  return { nombre: nombre, tel: tel, ventas: ventas };
+}
+
+// Recordatorio de pago como IMAGEN, con el MISMO formato que la factura de la PC:
+// logo + foto del perfume, título, cliente, próxima cuota, plan completo y datos de SINPE.
+async function imagenCobro(cli){
   const cfg = datos.config || {};
+  const pago = String(cfg.datos_pago || '').trim();
+  const pend = (cli.ventas || []).filter(v => num(v.saldo) > 0.5);
+  let prox = null, proxV = null, proxIdx = -1;
+  for(const v of pend){
+    const arr = cuotasDe(v);
+    const i = arr.findIndex(x => !x.pagada);
+    if(i >= 0 && (!prox || arr[i].vencimiento < prox.vencimiento)){ prox = arr[i]; proxV = v; proxIdx = i; }
+  }
+  const totCuotas = proxV ? cuotasDe(proxV).length : 0;
+  const tienePrima = !!(proxV && cuotasDe(proxV).some(x => x.tipo === 'prima'));
+  const titulo = prox
+    ? (prox.tipo === 'prima' ? 'AVISO DE PRIMA'
+       : tienePrima ? etiquetaCuota(proxV, cuotasDe(proxV), proxIdx).toUpperCase()
+       : (prox.numero === totCuotas ? 'RECORDATORIO DE ÚLTIMO PAGO' : 'RECORDATORIO DE PAGO ' + prox.numero + ' DE ' + totCuotas))
+    : 'RECORDATORIO DE PAGO';
+
   const W = 1080, M = 80, cx = W / 2;
   const FUENTE = "'Segoe UI', Roboto, Arial, sans-serif";
   const cv = document.createElement('canvas'); cv.width = W; cv.height = 6000;
   const ctx = cv.getContext('2d');
   ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, cv.height);
   ctx.textBaseline = 'top'; ctx.textAlign = 'center';
-  let y = 46;
+  let y = 40;
 
-  // Logo
-  try {
-    const r = await fetch('./logo.png', { cache: 'force-cache' });
-    if(r.ok){
-      const logo = await createImageBitmap(await r.blob());
-      const lw = 300, lh = Math.round(lw * logo.height / logo.width);
-      ctx.drawImage(logo, (W - lw) / 2, y, lw, lh);
-      y += lh + 30;
-    }
-  } catch(e){ /* sin logo, sigue igual */ }
-
-  const atrasado = num(c.atrasado) === 1;
-  const fecha = c.proximo ? String(c.proximo).slice(0,10).split('-').reverse().join('/') : '';
-  const pendientes = Math.max(num(c.pendientes), 1);
-  const monto = num(c.proximo_monto) > 0 ? num(c.proximo_monto) : Math.round(num(c.saldo) / pendientes);
-
-  // Título
-  ctx.fillStyle = atrasado ? '#c0392b' : '#8a6b1e';
-  ctx.font = 'bold 38px ' + FUENTE;
-  ctx.fillText(atrasado ? 'ABONO VENCIDO' : 'RECORDATORIO DE ABONO', cx, y);
-  y += 54;
-
-  // Cliente
-  ctx.fillStyle = '#171a21'; ctx.font = 'bold 44px ' + FUENTE;
-  for(const ln of envolverTexto(ctx, c.cliente || '', W - M * 2)){ ctx.fillText(ln, cx, y); y += 52; }
-  y += 6;
-
-  // Producto
-  const prod = String(c.producto || '') + (num(c.cantidad) > 1 ? ' × ' + num(c.cantidad) : '');
-  ctx.fillStyle = '#8a8f99'; ctx.font = '28px ' + FUENTE;
-  for(const ln of envolverTexto(ctx, prod, W - M * 2)){ ctx.fillText(ln, cx, y); y += 34; }
-  y += 22;
-
-  // Recuadro del próximo abono + saldo
-  const boxW = 560, boxH = 176, bx = M + boxW / 2;
-  ctx.fillStyle = '#fbf4df'; ctx.fillRect(M, y, boxW, boxH);
-  ctx.strokeStyle = '#ecd9a8'; ctx.lineWidth = 3; ctx.strokeRect(M, y, boxW, boxH);
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#8a6b1e'; ctx.font = 'bold 24px ' + FUENTE;
-  ctx.fillText(fecha ? 'TU PRÓXIMO ABONO' : 'SALDO PENDIENTE', bx, y + 20);
-  if(fecha){
-    ctx.fillStyle = '#171a21'; ctx.font = 'bold 34px ' + FUENTE;
-    ctx.fillText(fecha, bx, y + 56);
-    ctx.fillStyle = '#1f7a48'; ctx.font = 'bold 50px ' + FUENTE;
-    ctx.fillText(money(monto), bx, y + 104);
-  } else {
-    ctx.fillStyle = '#c0392b'; ctx.font = 'bold 54px ' + FUENTE;
-    ctx.fillText(money(num(c.saldo)), bx, y + 76);
+  function linea(){
+    ctx.strokeStyle = '#e6d6a8'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(M, y); ctx.lineTo(W - M, y); ctx.stroke(); y += 34;
+  }
+  function texto(t, font, color, lh){
+    ctx.font = font; ctx.fillStyle = color;
+    for(const ln of envolverTexto(ctx, t, W - M * 2)){ ctx.fillText(ln, cx, y); y += lh; }
   }
 
-  const rx = M + boxW + 44;
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#8a8f99'; ctx.font = '24px ' + FUENTE;
-  ctx.fillText('Saldo pendiente:', rx, y + 48);
-  ctx.fillStyle = '#c0392b'; ctx.font = 'bold 42px ' + FUENTE;
-  ctx.fillText(money(num(c.saldo)), rx, y + 84);
-  ctx.fillStyle = '#8a8f99'; ctx.font = '22px ' + FUENTE;
-  ctx.fillText('Abonado ' + money(num(c.abonado)) + ' de ' + money(num(c.total)), rx, y + 136);
-  ctx.textAlign = 'center';
-  y += boxH + 30;
+  // Arriba: LOGO + FOTO del perfume (con el nombre chico)
+  const primV = pend[0];
+  const lado = 200, gap = 80;
+  const logo = await cargarBitmap('./logo.png');
+  const fotoP = primV ? fotoDeCobro(primV) : null;
+  const foto = fotoP ? await cargarFotoGrande(fotoP) : null;
+  const ancho = lado * 2 + gap, x1 = cx - ancho / 2, x2 = x1 + lado + gap;
+  if(logo) ctx.drawImage(logo, x1, y, lado, lado);
+  if(foto){
+    const esc = Math.min(lado / foto.width, lado / foto.height);
+    const fw = foto.width * esc, fh = foto.height * esc;
+    ctx.drawImage(foto, x2 + (lado - fw) / 2, y + (lado - fh) / 2, fw, fh);
+  }
+  y += lado + 12;
+  if(primV){
+    const prod = productoDeCobro(primV);
+    const nombreFoto = String((prod && prod.nombre) || primV.producto || '') + ' x' + num(primV.cantidad || 1);
+    ctx.fillStyle = '#5b5f66'; ctx.font = '22px ' + FUENTE;
+    let yn = y;
+    for(const ln of envolverTexto(ctx, nombreFoto, lado + 120)){ ctx.fillText(ln, x2 + lado / 2, yn); yn += 28; }
+    y = yn;
+  }
+  y += 18;
+  linea();
 
-  // Línea
-  ctx.strokeStyle = '#e6d6a8'; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(M, y); ctx.lineTo(W - M, y); ctx.stroke(); y += 30;
+  texto(titulo, 'bold 38px ' + FUENTE, '#171a21', 50);
+  y += 10;
+  ctx.textAlign = 'left'; ctx.fillStyle = '#171a21'; ctx.font = '28px ' + FUENTE;
+  ctx.fillText('Cliente: ' + (cli.nombre || ''), M, y);
+  ctx.textAlign = 'right'; ctx.fillStyle = '#8a8f99'; ctx.font = '24px ' + FUENTE;
+  ctx.fillText(fmtFechaLarga(hoyISO()), W - M, y + 3);
+  ctx.textAlign = 'center';
+  y += 54;
+
+  for(const v of pend){
+    const arr = cuotasDe(v);
+    const cu = arr.filter(x => !x.pagada);
+    const cuota = cu[0];
+
+    // Recuadro con la FECHA + monto, y al lado el saldo pendiente
+    const boxW = 560, boxH = 176, bx = M + boxW / 2;
+    ctx.fillStyle = '#fbf4df'; ctx.fillRect(M, y, boxW, boxH);
+    ctx.strokeStyle = '#ecd9a8'; ctx.lineWidth = 3; ctx.strokeRect(M, y, boxW, boxH);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#8a6b1e'; ctx.font = 'bold 24px ' + FUENTE;
+    ctx.fillText(cuota && cuota.tipo === 'prima' ? 'TU PRIMA' : (tienePrima ? 'TU ABONO' : 'TU PAGO'), bx, y + 20);
+    if(cuota){
+      ctx.fillStyle = '#171a21'; ctx.font = 'bold 34px ' + FUENTE;
+      ctx.fillText(fmtFechaLarga(cuota.vencimiento), bx, y + 56);
+      ctx.fillStyle = '#1f7a48'; ctx.font = 'bold 50px ' + FUENTE;
+      ctx.fillText(money(cuota.monto), bx, y + 104);
+    } else {
+      ctx.fillStyle = '#c0392b'; ctx.font = 'bold 48px ' + FUENTE;
+      ctx.fillText(money(num(v.saldo)), bx, y + 80);
+    }
+    const rx = M + boxW + 44;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#8a8f99'; ctx.font = '24px ' + FUENTE;
+    ctx.fillText('Saldo pendiente:', rx, y + 48);
+    ctx.fillStyle = '#c0392b'; ctx.font = 'bold 42px ' + FUENTE;
+    ctx.fillText(money(num(v.saldo)), rx, y + 84);
+    ctx.textAlign = 'center';
+    y += boxH + 26;
+
+    // Los pagos que siguen, para que el ticket muestre el plan completo
+    const siguientes = cu.slice(1);
+    if(siguientes.length){
+      ctx.textAlign = 'left';
+      let yl = y;
+      for(const x of siguientes){
+        const et = etiquetaCuota(v, arr, arr.indexOf(x));
+        ctx.fillStyle = x.tipo === 'prima' ? '#8a6b1e' : '#333a45';
+        ctx.font = (x.tipo === 'prima' ? 'bold ' : '') + '22px ' + FUENTE;
+        ctx.fillText(et + ':', M, yl);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#5b5f66';
+        ctx.fillText(fmtFechaCorta(x.vencimiento) + ' · ' + money(x.monto), W - M, yl);
+        ctx.textAlign = 'left';
+        yl += 30;
+      }
+      y = yl + 6;
+      ctx.textAlign = 'center';
+    }
+  }
+
+  linea();
 
   // Datos para pagar
-  const pago = String(cfg.datos_pago || '').trim();
   if(pago){
     ctx.textAlign = 'left';
     ctx.fillStyle = '#8a8f99'; ctx.font = 'bold 22px ' + FUENTE;
@@ -1202,33 +1352,33 @@ async function imagenCobro(c){
     ctx.fillStyle = '#333a45'; ctx.font = '22px ' + FUENTE;
     for(const ln of pago.split('\n')){ ctx.fillText(ln, M, y); y += 28; }
     ctx.textAlign = 'center';
-    y += 12;
+    y += 10;
   }
 
   // Pie
-  ctx.fillStyle = '#8a6b1e'; ctx.font = '24px ' + FUENTE;
-  for(const ln of envolverTexto(ctx, '¡Gracias por comprar en King Quepoa, tu esencia, tu estilo, tu reino!', W - M * 2)){
-    ctx.fillText(ln, cx, y); y += 34;
-  }
+  texto('¡Gracias por comprar en King Quepoa, tu esencia, tu estilo, tu reino!', '24px ' + FUENTE, '#8a6b1e', 36);
 
-  const H = Math.ceil(y) + 46;
+  const H = Math.ceil(y) + 40;
   const final = document.createElement('canvas'); final.width = W; final.height = H;
   final.getContext('2d').drawImage(cv, 0, 0, W, H, 0, 0, W, H);
   return await new Promise(r => final.toBlob(r, 'image/png'));
 }
 
-// Tocar el 📲 de Cobros: arma la imagen, la copia (sin link) y abre el chat del cliente.
+// Tocar el 📲 de Cobros: arma la factura del cliente (con foto y plan de pagos),
+// la copia (sin link) y abre el chat del cliente.
 async function enviarImagenCobro(c){
+  const cli = clienteDeCobro(c);
   toast('🧾 Armando el recordatorio…');
   let blob = null;
-  try { blob = await imagenCobro(c); } catch(e){ blob = null; }
+  try { blob = await imagenCobro(cli); } catch(e){ blob = null; }
+  const tel = (c && c.telefono) || cli.tel;
   if(!blob){
-    await copiarTexto(textoCobro(c), '📋 Copié el recordatorio');
-    if(c.telefono) abrirWhatsApp('', c.telefono);
+    await copiar(textoCobro(cli), '📋 Copié el recordatorio');
+    if(tel) abrirWhatsApp('', tel);
     return;
   }
   await entregarImagen(blob, '🧾 Recordatorio copiado — pegalo en el chat');
-  if(c.telefono) setTimeout(() => abrirWhatsApp('', c.telefono), 700);
+  if(tel) setTimeout(() => abrirWhatsApp('', tel), 700);
 }
 
 function abrirProducto(p){
@@ -1270,18 +1420,33 @@ function abrirProducto(p){
 let cobrosError = '';
 
 function textoCobro(c){
-  const nombre = String(c.cliente||'').trim().split(/\s+/)[0] || '';
-  const mi = (datos.config && datos.config.mi_nombre) || 'Mauricio';
-  const fecha = c.proximo ? String(c.proximo).slice(0,10).split('-').reverse().join('/') : '';
-  const l = [];
-  l.push(`¡Hola ${nombre}! Soy ${mi}, de la perfumería *King Quepoa*.`);
-  l.push('');
-  l.push(`Te recuerdo que tenés un saldo de ${money(c.saldo)} por ${c.producto || 'tu perfume'}.`);
-  if (num(c.atrasado) === 1 && fecha) l.push(`El abono venció el ${fecha}.`);
-  else if (fecha) l.push(`El próximo abono vence el ${fecha}.`);
-  l.push('');
-  l.push('Cuando puedas me escribís. ¡Gracias!');
-  return l.join('\n');
+  const cli = (c && c.ventas) ? c : { nombre: (c && c.cliente) || '', ventas: c ? [c] : [] };
+  const cfg = datos.config || {};
+  const pago = String(cfg.datos_pago || '').trim();
+  const pend = (cli.ventas || []).filter(v => num(v.saldo) > 0.5);
+  const bloques = [];
+  for(const v of pend){
+    const arr = cuotasDe(v);
+    const cu = arr.filter(x => !x.pagada);
+    const prod = `📦 *${v.producto || 'tu perfume'}*${num(v.cantidad) > 1 ? ' ×' + num(v.cantidad) : ''}`;
+    if(cu.length){
+      const lineas = cu.map(x => {
+        const et = etiquetaCuota(v, arr, arr.indexOf(x)).toLowerCase();
+        return `• *${et}* — ${fmtFechaLarga(x.vencimiento)}: *${money(x.monto)}*`;
+      });
+      bloques.push(`${prod}\n${lineas.join('\n')}`);
+    } else {
+      bloques.push(`${prod}\nSaldo pendiente: *${money(v.saldo)}*`);
+    }
+  }
+  const total = pend.reduce((s, v) => s + num(v.saldo), 0);
+  let t = `¡Hola ${primerNombreDe(cli.nombre)}! ¿Cómo estás? 👋\n`;
+  t += `Te escribimos de *King Quepoa Perfumería* 🧴\n\n`;
+  t += bloques.length ? bloques.join('\n\n') : `Tenés un saldo de *${money(total)}*.`;
+  t += `\n\n💳 Podés hacer el pago por *SINPE Móvil*`;
+  if(pago) t += `:\n${pago}`;
+  t += `\n\n¡Gracias por comprar en King Quepoa, tu esencia, tu estilo, tu reino! ✨`;
+  return t;
 }
 
 async function cargarCobros(mostrar){
