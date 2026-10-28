@@ -228,7 +228,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.9.0';
+const VERSION = '1.9.1';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1' };
@@ -1174,6 +1174,19 @@ function etiquetaCuota(v, cuotas, i){
   }
   return (total && i === total - 1) ? 'Último pago' : 'Pago ' + (i + 1);
 }
+// Plan "de respaldo" cuando el Apps Script todavía no manda las cuotas:
+// usa el próximo vencimiento y el monto que ya venían en COBROS.
+function planDeVenta(v){
+  const arr = cuotasDe(v);
+  if(arr.length) return { arr: arr, completo: true };
+  const n = Math.max(num(v && v.pendientes), 1);
+  const saldo = num(v && v.saldo);
+  const prox = num(v && v.proximo_monto) > 0 ? num(v.proximo_monto) : Math.round(saldo / n);
+  return {
+    arr: [{ numero: 1, monto: prox, vencimiento: String((v && v.proximo) || '').slice(0,10), pagada: false, tipo: 'abono' }],
+    completo: false
+  };
+}
 // La foto del perfume: la que manda la PC o, si no, la del catálogo que ya tiene la app.
 function claveProd(s){
   return norm(s).replace(/[^a-z0-9]/g, '');
@@ -1228,16 +1241,19 @@ async function imagenCobro(cli){
   const pend = (cli.ventas || []).filter(v => num(v.saldo) > 0.5);
   let prox = null, proxV = null, proxIdx = -1;
   for(const v of pend){
-    const arr = cuotasDe(v);
+    const arr = planDeVenta(v).arr;
     const i = arr.findIndex(x => !x.pagada);
     if(i >= 0 && (!prox || arr[i].vencimiento < prox.vencimiento)){ prox = arr[i]; proxV = v; proxIdx = i; }
   }
-  const totCuotas = proxV ? cuotasDe(proxV).length : 0;
-  const tienePrima = !!(proxV && cuotasDe(proxV).some(x => x.tipo === 'prima'));
+  const planProx = proxV ? planDeVenta(proxV) : null;
+  const totCuotas = planProx && planProx.completo ? planProx.arr.length : 0;
+  const tienePrima = !!(planProx && planProx.arr.some(x => x.tipo === 'prima'));
   const titulo = prox
     ? (prox.tipo === 'prima' ? 'AVISO DE PRIMA'
-       : tienePrima ? etiquetaCuota(proxV, cuotasDe(proxV), proxIdx).toUpperCase()
-       : (prox.numero === totCuotas ? 'RECORDATORIO DE ÚLTIMO PAGO' : 'RECORDATORIO DE PAGO ' + prox.numero + ' DE ' + totCuotas))
+       : tienePrima ? etiquetaCuota(proxV, planProx.arr, proxIdx).toUpperCase()
+       : (planProx && planProx.completo
+          ? (prox.numero === totCuotas ? 'RECORDATORIO DE ÚLTIMO PAGO' : 'RECORDATORIO DE PAGO ' + prox.numero + ' DE ' + totCuotas)
+          : 'RECORDATORIO DE PAGO'))
     : 'RECORDATORIO DE PAGO';
 
   const W = 1080, M = 80, cx = W / 2;
@@ -1292,7 +1308,8 @@ async function imagenCobro(cli){
   y += 54;
 
   for(const v of pend){
-    const arr = cuotasDe(v);
+    const plan = planDeVenta(v);
+    const arr = plan.arr;
     const cu = arr.filter(x => !x.pagada);
     const cuota = cu[0];
 
@@ -1426,15 +1443,17 @@ function textoCobro(c){
   const pend = (cli.ventas || []).filter(v => num(v.saldo) > 0.5);
   const bloques = [];
   for(const v of pend){
-    const arr = cuotasDe(v);
+    const plan = planDeVenta(v);
+    const arr = plan.arr;
     const cu = arr.filter(x => !x.pagada);
     const prod = `📦 *${v.producto || 'tu perfume'}*${num(v.cantidad) > 1 ? ' ×' + num(v.cantidad) : ''}`;
     if(cu.length){
       const lineas = cu.map(x => {
-        const et = etiquetaCuota(v, arr, arr.indexOf(x)).toLowerCase();
+        const et = plan.completo ? etiquetaCuota(v, arr, arr.indexOf(x)).toLowerCase() : 'próximo pago';
         return `• *${et}* — ${fmtFechaLarga(x.vencimiento)}: *${money(x.monto)}*`;
       });
-      bloques.push(`${prod}\n${lineas.join('\n')}`);
+      const extra = plan.completo ? '' : `\nSaldo pendiente: *${money(v.saldo)}*`;
+      bloques.push(`${prod}\n${lineas.join('\n')}${extra}`);
     } else {
       bloques.push(`${prod}\nSaldo pendiente: *${money(v.saldo)}*`);
     }
