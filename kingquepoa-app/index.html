@@ -230,6 +230,7 @@
   <button data-v="stock" class="activo"><i>🧴</i><span>Stock</span></button>
   <button data-v="vender" class="oculto"><i>🛒</i><span>Vender</span></button>
   <button data-v="cobros" class="oculto"><i>💰</i><span>Cobros</span></button>
+  <button data-v="numeros" class="oculto"><i>📊</i><span>Números</span></button>
   <button data-v="catalogo"><i>📋</i><span>Catálogo</span></button>
   <button data-v="ajustes" class="oculto"><i>⚙️</i><span>Ajustes</span></button>
 </nav>
@@ -245,13 +246,14 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.10.0';
+const VERSION = '1.11.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
-const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1' };
+const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', numeros:'kq_numeros_v1' };
 
 let datos = { inventario:[], config:{}, guardado:null };
 let cobros = [];
+let nums = null, numsError = '', numsFiltro = 'todas', cargandoNums = false;
 let vista = 'stock';
 let filtro = { q:'', cat:'Todos', soloStock:false };
 let notas = [];
@@ -375,7 +377,7 @@ function guardarAbonosOn(v){
 /* ---------------- roles: dueño vs visitante ---------------- */
 function aplicarRol(){
   const dueno = esDueno();
-  const privadas = ['vender','cobros','ajustes'];
+  const privadas = ['vender','cobros','numeros','ajustes'];
   let visibles = 0;
   document.querySelectorAll('nav button').forEach(b => {
     const ocultar = !dueno && privadas.indexOf(b.dataset.v) !== -1;
@@ -533,6 +535,7 @@ function render(){
   if(vista === 'stock') return pintarStock(app);
   if(vista === 'vender') return pintarVender(app);
   if(vista === 'cobros') return pintarCobros(app);
+  if(vista === 'numeros') return pintarNumeros(app);
   if(vista === 'catalogo') return pintarCatalogo(app);
   if(vista === 'ajustes') return pintarAjustes(app);
 }
@@ -1745,6 +1748,135 @@ function abrirAbono(c){
   };
 }
 
+/* ---------------- Mis números (privado: con clave) ---------------- */
+async function cargarNumeros(mostrar){
+  const t = token();
+  if(!t){ if(mostrar) toast('Falta la clave en Acceso', 'error'); return; }
+  if(cargandoNums) return;
+  cargandoNums = true;
+  if(mostrar) toast('Actualizando…');
+  try {
+    const r = await fetch(API + '?action=numeros&token=' + encodeURIComponent(t) + '&t=' + Date.now());
+    const j = await r.json();
+    if(!j || !j.ok) throw new Error((j && j.error) || 'No se pudo leer Mis números');
+    nums = j.numeros || null;
+    numsError = '';
+    guardarLS(LS.numeros, { nums: nums, guardado: Date.now() });
+    if(vista === 'numeros') render();
+    if(mostrar) toast('Números actualizados');
+  } catch(e) {
+    numsError = /desconocida/i.test(e.message)
+      ? 'Falta actualizar el script de Google (versión 1.5).'
+      : (e.message || 'Sin señal');
+    if(vista === 'numeros') render();
+    if(mostrar) toast(numsError, 'error');
+  } finally {
+    cargandoNums = false;
+  }
+}
+
+function cajaNum(etiqueta, valor, color){
+  return `<div style="background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px">
+    <div style="font-size:10.5px;letter-spacing:.05em;color:var(--muted);text-transform:uppercase">${etiqueta}</div>
+    <div style="font-size:17px;font-weight:700;line-height:1.25;color:${color || 'var(--text)'};margin-top:2px">${valor}</div>
+  </div>`;
+}
+
+function pintarNumeros(app){
+  if(!token()){
+    app.innerHTML = `<div class="card">
+      <h3>Mis números</h3>
+      <p class="hint" style="margin:8px 0 14px">Esta sección es privada: entra con la clave del dueño.</p>
+      <button class="btn" id="nu-ir">Ir a Ajustes</button>
+    </div>`;
+    $('#nu-ir').onclick = () => { vista = 'ajustes'; render(); };
+    return;
+  }
+
+  if(!nums){
+    if(!numsError) setTimeout(() => cargarNumeros(false), 80);
+    app.innerHTML = `<div class="card">
+      <h3>Mis números</h3>
+      ${numsError
+        ? `<div class="aviso" style="margin:8px 0 10px">${esc(numsError)}</div>`
+        : `<p class="hint" style="margin:8px 0 12px">Cargando tus números…</p>`}
+      <button class="btn ghost" id="nu-ref">⟳ Actualizar</button>
+    </div>`;
+    $('#nu-ref').onclick = () => cargarNumeros(true);
+    return;
+  }
+
+  const r = nums.resumen || {};
+  const ventas = Array.isArray(nums.ventas) ? nums.ventas : [];
+  const pagadas = ventas.filter(v => num(v.saldo) <= 0.5);
+  const deben = ventas.filter(v => num(v.saldo) > 0.5);
+  const lista = (numsFiltro === 'pagadas' ? pagadas : numsFiltro === 'deben' ? deben : ventas);
+  const cats = Array.isArray(nums.categorias) ? nums.categorias : [];
+  const fecha = f => String(f || '').slice(0,10).split('-').reverse().join('/');
+  const estado = v => num(v.saldo) <= 0.5
+    ? '<span class="tag" style="color:var(--green);border-color:rgba(62,207,142,.35)">Pagada</span>'
+    : (num(v.cobrado) > 0
+        ? '<span class="tag" style="color:var(--gold2)">Abonando</span>'
+        : '<span class="tag" style="color:var(--red)">Sin pagos</span>');
+
+  app.innerHTML = `
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <h3 style="margin:0;flex:1">Mis números</h3>
+        <button class="btn ghost sm" id="nu-ref">⟳</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        ${cajaNum('Total vendido', money(r.total_vendido), 'var(--gold2)')}
+        ${cajaNum('Ganancia cobrada', money(r.ganancia_cobrada), 'var(--green)')}
+        ${cajaNum('Por cobrar', money(r.por_cobrar), num(r.por_cobrar) > 0.5 ? 'var(--red)' : 'var(--green)')}
+        ${cajaNum('N° de ventas', num(r.n_ventas))}
+        ${cajaNum('Invertido en stock', money(r.invertido_stock), 'var(--blue)')}
+        ${cajaNum('En stock con margen', money(r.venta_stock), 'var(--gold2)')}
+        ${cajaNum('Perfumes vendidos', num(r.unidades_vendidas))}
+        ${cajaNum('Unidades en stock', num(r.unidades_stock))}
+      </div>
+      <div class="hint" style="margin-top:10px">Actualizado ${nums.actualizado ? hace(new Date(nums.actualizado).getTime()) : '—'} · tipo de cambio ₡${num(r.tc)}</div>
+    </div>
+
+    <div class="card">
+      <h3>Stock por categoría</h3>
+      ${cats.map(c => `<div style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px">
+        <b style="flex:1">${esc(c.nombre)}</b>
+        <span class="muted">${num(c.unidades)} u.</span>
+        <span style="color:var(--gold2)">${money(c.venta)}</span>
+      </div>`).join('')}
+    </div>
+
+    <div class="card">
+      <h3>Historial de ventas</h3>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0 10px">
+        <button class="btn ${numsFiltro === 'todas' ? '' : 'ghost'} sm" data-num-f="todas">Todas ${ventas.length}</button>
+        <button class="btn ${numsFiltro === 'pagadas' ? '' : 'ghost'} sm" data-num-f="pagadas">Pagadas ${pagadas.length}</button>
+        <button class="btn ${numsFiltro === 'deben' ? '' : 'ghost'} sm" data-num-f="deben">Por cobrar ${deben.length}</button>
+      </div>
+      ${lista.length ? lista.map(v => `<div class="prod" style="cursor:default">
+        <div class="info">
+          <div class="nom">${esc(v.cliente)}${v.referencia ? ` <span style="color:var(--muted);font-weight:400;font-size:11px">(${esc(v.referencia)})</span>` : ''}</div>
+          <div class="mar">${esc(v.perfume)}${num(v.cantidad) > 1 ? ' · ' + num(v.cantidad) + ' u.' : ''}</div>
+          <div class="fila">
+            <span class="precio">${money(v.total)}</span>
+            <span class="pagos">${fecha(v.fecha)}</span>
+          </div>
+          <div class="fila" style="margin-top:4px;gap:6px;flex-wrap:wrap">
+            ${estado(v)}
+            <span class="tag">Cobrado ${money(v.cobrado)}</span>
+            ${num(v.saldo) > 0.5 ? `<span class="tag" style="color:var(--red)">Saldo ${money(v.saldo)}</span>` : ''}
+          </div>
+        </div>
+      </div>`).join('') : `<div class="vacio"><span class="em">📊</span>No hay ventas en este grupo.</div>`}
+    </div>`;
+
+  $('#nu-ref').onclick = () => cargarNumeros(true);
+  app.querySelectorAll('[data-num-f]').forEach(b => {
+    b.onclick = () => { numsFiltro = b.dataset.numF; render(); };
+  });
+}
+
 /* ---------------- notas (avisos para la PC) ---------------- */
 
 function guardarNotas(){
@@ -2193,10 +2325,12 @@ function pintarAjustes(app){
       localStorage.removeItem(LS.datos);
       localStorage.removeItem(LS.notas);
       localStorage.removeItem(LS.cobros);
+      localStorage.removeItem(LS.numeros);
     } catch(e){}
     datos = { inventario:[], config:{}, guardado:null };
     notas = [];
     cobros = [];
+    nums = null;
     toast('Datos borrados');
     sincronizar(false);
     render();
@@ -2210,19 +2344,24 @@ document.querySelectorAll('nav button').forEach(b => {
     try { history.replaceState(null, '', '#' + vista); } catch(e){}
     render();
     if(vista === 'cobros') cargarCobros(false);
+    if(vista === 'numeros') cargarNumeros(false);
     window.scrollTo(0,0);
   });
 });
-$('#btn-sync').addEventListener('click', () => sincronizar(false));
+$('#btn-sync').addEventListener('click', () => {
+  sincronizar(false);
+  if(vista === 'numeros') cargarNumeros(false);
+});
 
 window.addEventListener('online', () => { pintarEstado(); });
 window.addEventListener('offline', () => pintarEstado(true));
 window.addEventListener('hashchange', () => {
   const h = location.hash.replace('#','');
-  if(['stock','vender','cobros','catalogo','ajustes'].includes(h) && h !== vista){
+  if(['stock','vender','cobros','numeros','catalogo','ajustes'].includes(h) && h !== vista){
     vista = h;
     render();
     if(h === 'cobros') cargarCobros(false);
+    if(h === 'numeros') cargarNumeros(false);
     window.scrollTo(0,0);
   }
 });
@@ -2249,6 +2388,9 @@ document.addEventListener('click', ev => {
   const gc = leerLS(LS.cobros, null);
   if(gc && Array.isArray(gc.cobros)) cobros = gc.cobros;
 
+  const gn = leerLS(LS.numeros, null);
+  if(gn && gn.nums) nums = gn.nums;
+
   // Permite cargar la clave una sola vez desde un enlace:  ...?clave=XXXX
   try {
     const params = new URLSearchParams(location.search);
@@ -2263,13 +2405,14 @@ document.addEventListener('click', ev => {
   } catch(e){}
 
   const h = location.hash.replace('#','');
-  if(['stock','vender','cobros','catalogo','ajustes'].includes(h)) vista = h;
+  if(['stock','vender','cobros','numeros','catalogo','ajustes'].includes(h)) vista = h;
 
   render();
   pintarEstado(!navigator.onLine);
 
   sincronizar(true).then(() => {
     if(token()) cargarCobros(false);
+    if(token() && vista === 'numeros') cargarNumeros(false);
   });
 
   if('serviceWorker' in navigator){
