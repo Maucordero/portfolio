@@ -867,7 +867,7 @@ function pintarVender(app){
       if(nCuotas > 0) partes.push(`Saldo ${money(resto)} en ${nCuotas} pago${nCuotas === 1 ? '' : 's'} de ${money(cuota)}`);
       else partes.push('Queda pagada');
     } else {
-      partes.push('Pago completo');
+      partes.push(`Pagado: ${money(total)} · Saldo ₡0`);
     }
     if(st <= 0) partes.push('<span style="color:var(--red)">⛔ Sin existencia</span>');
     else if(cant > st) partes.push(`<span style="color:var(--red)">⛔ Solo hay ${st} en stock</span>`);
