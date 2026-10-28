@@ -1737,7 +1737,7 @@ function abrirAbono(c){
       if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó el abono');
       cerrar();
       mostrarConfirmacionCobro(`✅ Abono de ${money(monto)} anotado · ${c.cliente}`);
-      setTimeout(() => { if(vista === 'cobros') cargarCobros(false); }, 12000);
+      setTimeout(() => { if(vista === 'cobros') cargarCobros(false); }, 62000);
     } catch(e){
       toast(e.message || 'No se pudo registrar', 'error');
       btn.disabled = false; btn.textContent = 'Registrar abono';
