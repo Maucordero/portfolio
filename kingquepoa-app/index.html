@@ -193,6 +193,24 @@
     font-size:12.5px;padding:10px 12px;border-radius:10px;margin-bottom:12px;
     background:rgba(201,162,75,.1);border:1px solid rgba(201,162,75,.35);color:var(--gold2)
   }
+  .aviso.ok{
+    background:rgba(62,207,142,.1);border-color:rgba(62,207,142,.35);color:var(--green)
+  }
+  .sugerencias-app{
+    position:absolute;left:0;right:0;top:100%;z-index:40;margin-top:4px;
+    background:var(--panel2);border:1px solid var(--line2);border-radius:10px;
+    box-shadow:0 12px 30px rgba(0,0,0,.45);max-height:300px;overflow:auto
+  }
+  .sugerencias-app .sug{
+    display:flex;gap:10px;justify-content:space-between;align-items:center;
+    padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer
+  }
+  .sugerencias-app .sug:last-child{border-bottom:0}
+  .sugerencias-app .sug .nom{font-size:13px;font-weight:600;line-height:1.25}
+  .sugerencias-app .sug .mar{font-size:11px;color:var(--muted);margin-top:2px}
+  .sugerencias-app .sug .st{font-size:11px;font-weight:700;white-space:nowrap}
+  .st.ok{color:var(--green)}
+  .st.no{color:var(--red)}
 </style>
 </head>
 <body>
@@ -212,7 +230,6 @@
   <button data-v="stock" class="activo"><i>🧴</i><span>Stock</span></button>
   <button data-v="vender" class="oculto"><i>🛒</i><span>Vender</span></button>
   <button data-v="cobros" class="oculto"><i>💰</i><span>Cobros</span></button>
-  <button data-v="notas" class="oculto"><i>📝</i><span>Notas</span></button>
   <button data-v="catalogo"><i>📋</i><span>Catálogo</span></button>
   <button data-v="ajustes" class="oculto"><i>⚙️</i><span>Ajustes</span></button>
 </nav>
@@ -228,10 +245,10 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.9.1';
+const VERSION = '1.10.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
-const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1' };
+const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1' };
 
 let datos = { inventario:[], config:{}, guardado:null };
 let cobros = [];
@@ -348,11 +365,17 @@ function token(){
 function guardarToken(t){
   try { t ? localStorage.setItem(LS.token, t) : localStorage.removeItem(LS.token); } catch(e){}
 }
+function abonosOn(){
+  try { return (localStorage.getItem(LS.abonos) || '1') !== '0'; } catch(e){ return true; }
+}
+function guardarAbonosOn(v){
+  try { localStorage.setItem(LS.abonos, v ? '1' : '0'); } catch(e){}
+}
 
 /* ---------------- roles: dueño vs visitante ---------------- */
 function aplicarRol(){
   const dueno = esDueno();
-  const privadas = ['vender','cobros','notas','ajustes'];
+  const privadas = ['vender','cobros','ajustes'];
   let visibles = 0;
   document.querySelectorAll('nav button').forEach(b => {
     const ocultar = !dueno && privadas.indexOf(b.dataset.v) !== -1;
@@ -510,7 +533,6 @@ function render(){
   if(vista === 'stock') return pintarStock(app);
   if(vista === 'vender') return pintarVender(app);
   if(vista === 'cobros') return pintarCobros(app);
-  if(vista === 'notas') return pintarNotas(app);
   if(vista === 'catalogo') return pintarCatalogo(app);
   if(vista === 'ajustes') return pintarAjustes(app);
 }
@@ -643,17 +665,29 @@ function fechaCortaCel(iso){
   return d && m ? d + '/' + m : String(iso || '');
 }
 
+function mostrarConfirmacionVenta(txt){
+  const el = $('#v-confirmacion');
+  if(!el) return;
+  el.textContent = txt;
+  el.style.display = '';
+  clearTimeout(window._confVentaTimer);
+  window._confVentaTimer = setTimeout(() => {
+    const x = $('#v-confirmacion'); if(x) x.style.display = 'none';
+  }, 60000);
+}
+
 function pintarVender(app){
   if(!esDueno()){ vista = 'stock'; return render(); }
-  const enStock = datos.inventario.filter(p => num(p.stock) > 0);
-  const opciones = enStock.map(p =>
-    `<option value="${esc(p.id)}">${esc(p.nombre)} — ${money(p.precio_crc)} (${num(p.stock)} u.)</option>`).join('');
 
   app.innerHTML = `
     <div class="card">
       <h3>Vender</h3>
-      <p class="hint" style="margin-bottom:12px">Se anota acá y <b>entra sola al sistema</b> en menos de un minuto (si la PC está encendida). Si la PC está apagada, queda esperando y entra cuando la prendas.</p>
-      <label class="f"><span>Perfume</span><select id="v-prod">${opciones || '<option value="">Sin stock</option>'}</select></label>
+      <p class="hint" style="margin-bottom:12px">Escribí el nombre o la marca. Los que tienen existencia salen en <b style="color:var(--green)">verde</b> y los agotados en <b style="color:var(--red)">rojo</b>.</p>
+      <label class="f" style="position:relative"><span>Perfume</span>
+        <input id="v-prod-buscar" placeholder="Ej: Issey Miyake…" autocomplete="off">
+        <input type="hidden" id="v-prod">
+        <div id="v-prod-sug" class="sugerencias-app oculto"></div>
+      </label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <label class="f"><span>Cantidad</span><input id="v-cant" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
         <label class="f"><span>Pago</span><select id="v-tipo">
@@ -691,10 +725,7 @@ function pintarVender(app){
       <label class="f"><span>Nota (opcional)</span><input id="v-nota" placeholder="Ej: entrega el viernes"></label>
       <div id="v-resumen" class="aviso" style="display:none"></div>
       <button class="btn" id="v-guardar">Registrar venta</button>
-    </div>
-    <div class="card">
-      <h3 style="margin-bottom:8px">Anotadas en este teléfono</h3>
-      <div id="v-lista"></div>
+      <div id="v-confirmacion" class="aviso ok" style="display:none"></div>
     </div>`;
 
   const $p = () => datos.inventario.find(x => String(x.id) === $('#v-prod').value);
@@ -729,7 +760,6 @@ function pintarVender(app){
       const p = $p();
       if(p && !(num($('#v-prima-monto').value) > 0)) $('#v-prima-monto').value = mil(primaDe(p) * $cant());
       if(!$('#v-prima-fecha').value) $('#v-prima-fecha').value = proximaCuotaISO();
-      // La prima todavía no la pagó: "Me da ahora" arranca en 0.
       const ab = $('#v-abono');
       if(ab){ ab.value = 0; ab.dataset.tocado = '1'; }
       ajustarPrimerAbono();
@@ -737,9 +767,62 @@ function pintarVender(app){
     actualizar();
   };
 
+  const mostrarSugProd = () => {
+    const box = $('#v-prod-sug');
+    if(!box) return;
+    const q = norm($('#v-prod-buscar').value);
+    if(!q){ box.classList.add('oculto'); box.innerHTML = ''; return; }
+    const lista = datos.inventario
+      .filter(p => {
+        const nom = norm(p.nombre), mar = norm(p.marca);
+        if(q.length === 1) return nom.startsWith(q) || mar.startsWith(q);
+        return nom.includes(q) || mar.includes(q);
+      })
+      .sort((a,b) => {
+        const an = norm(a.nombre), bn = norm(b.nombre);
+        const ap = an.startsWith(q) ? 0 : 1, bp = bn.startsWith(q) ? 0 : 1;
+        if(ap !== bp) return ap - bp;
+        const as = num(a.stock) > 0 ? 0 : 1, bs = num(b.stock) > 0 ? 0 : 1;
+        if(as !== bs) return as - bs;
+        return an.localeCompare(bn);
+      })
+      .slice(0, 12);
+    if(!lista.length){
+      box.innerHTML = `<div class="sug"><div><div class="nom">Sin resultados</div><div class="mar">Probá con otra marca o nombre</div></div></div>`;
+      box.classList.remove('oculto');
+      return;
+    }
+    box.innerHTML = lista.map(p => {
+      const st = num(p.stock);
+      return `<div class="sug" data-pid="${esc(p.id)}">
+        <div style="min-width:0">
+          <div class="nom">${esc(p.nombre)}</div>
+          <div class="mar">${esc(p.marca||'')}${p.ml ? ' · ' + esc(p.ml) + ' ml' : ''} · ${money(p.precio_crc)}</div>
+        </div>
+        <div class="st ${st > 0 ? 'ok' : 'no'}">${st > 0 ? st + ' en stock' : 'Sin stock'}</div>
+      </div>`;
+    }).join('');
+    box.classList.remove('oculto');
+    box.querySelectorAll('[data-pid]').forEach(el => {
+      el.onclick = () => {
+        const p = datos.inventario.find(x => String(x.id) === String(el.dataset.pid));
+        if(!p) return;
+        $('#v-prod').value = String(p.id);
+        $('#v-prod-buscar').value = p.nombre;
+        box.classList.add('oculto');
+        const ab = $('#v-abono'); if(ab) ab.dataset.tocado = '';
+        actualizar();
+      };
+    });
+  };
+
   const actualizar = () => {
     const p = $p();
-    if(!p) return;
+    const res = $('#v-resumen');
+    if(!p){
+      res.style.display = 'none';
+      return;
+    }
     const tipo = $tipo();
     const planN = planDe(tipo);
     const esPlan = planN > 0;
@@ -747,9 +830,6 @@ function pintarVender(app){
     const total = totalVenta(p, cant, tipo);
 
     $('#v-plan').classList.toggle('oculto', !esPlan);
-    const fechaWrap = $('#v-fecha-wrap');
-    if(fechaWrap) fechaWrap.classList.toggle('oculto', false);
-
     const primaWrap = $('#v-prima-wrap');
     if(primaWrap) primaWrap.classList.toggle('oculto', planN < 2);
     const chkPrima = $('#v-prima-check');
@@ -771,6 +851,7 @@ function pintarVender(app){
     const esPrimer = esPlan && puedePrimer && modo === 'primer_pago' && monto > 0;
     const nCuotas = !esPlan ? 0 : (esPrimer ? planN - 1 : planN);
     const cuota = nCuotas > 0 ? Math.round(resto / nCuotas) : 0;
+    const st = num(p.stock);
 
     const partes = [`<b>Total: ${money(total)}</b>`];
     if(primaAviso && planN >= 2){
@@ -783,41 +864,44 @@ function pintarVender(app){
       partes.push(fechas.map(fechaCortaCel).join(' · '));
     } else if(esPlan){
       partes.push(`${esPrimer ? '1er pago' : 'Prima'}: ${money(monto)}`);
-      if(nCuotas > 0){
-        partes.push(`Saldo ${money(resto)} en ${nCuotas} pago${nCuotas === 1 ? '' : 's'} de ${money(cuota)}`);
-      } else {
-        partes.push('Queda pagada');
-      }
+      if(nCuotas > 0) partes.push(`Saldo ${money(resto)} en ${nCuotas} pago${nCuotas === 1 ? '' : 's'} de ${money(cuota)}`);
+      else partes.push('Queda pagada');
     } else {
       partes.push('Pago completo');
     }
-    if(num(p.stock) < cant) partes.push('⚠️ No hay stock suficiente');
-    const res = $('#v-resumen');
+    if(st <= 0) partes.push('<span style="color:var(--red)">⛔ Sin existencia</span>');
+    else if(cant > st) partes.push(`<span style="color:var(--red)">⛔ Solo hay ${st} en stock</span>`);
+    else partes.push(`<span style="color:var(--green)">✅ ${st} en stock</span>`);
+
     res.style.display = '';
     res.innerHTML = partes.join(' · ');
   };
 
-  ['#v-prod','#v-cant','#v-tipo','#v-modo'].forEach(sel => {
-    const el = $(sel); if(!el) return;
-    el.addEventListener('change', () => {
-      const ab = $('#v-abono'); if(ab) ab.dataset.tocado = '';
-      actualizar();
-    });
+  $('#v-prod-buscar').addEventListener('input', () => {
+    $('#v-prod').value = '';
+    mostrarSugProd();
+    actualizar();
   });
+  $('#v-prod-buscar').addEventListener('focus', mostrarSugProd);
   $('#v-cant').addEventListener('input', actualizar);
+  $('#v-tipo').addEventListener('change', () => {
+    const ab = $('#v-abono'); if(ab) ab.dataset.tocado = '';
+    actualizar();
+  });
+  $('#v-modo').addEventListener('change', actualizar);
   $('#v-abono').addEventListener('input', e => { e.target.dataset.tocado = '1'; actualizar(); });
   $('#v-fecha').value = proximaCuotaISO();
   $('#v-prima-check').addEventListener('change', togglePrima);
   $('#v-prima-monto').addEventListener('input', actualizar);
   $('#v-prima-fecha').addEventListener('change', () => { ajustarPrimerAbono(); actualizar(); });
-  actualizar();
 
   $('#v-guardar').onclick = async () => {
     const t = token();
     if(!t) return toast('Falta la clave en Acceso', 'error');
     const p = $p();
-    if(!p) return toast('Elegí un perfume', 'error');
+    if(!p) return toast('Elegí un perfume de la lista', 'error');
     const cant = $cant();
+    if(num(p.stock) <= 0) return toast(`Sin existencia: ${p.nombre}`, 'error');
     if(cant > num(p.stock)) return toast(`Solo hay ${num(p.stock)} en stock`, 'error');
     const cliente = $('#v-cli').value.trim();
     const tel = $('#v-tel').value.trim();
@@ -835,8 +919,6 @@ function pintarVender(app){
     const nota = $('#v-nota').value.trim();
     const referencia = $('#v-ref').value.trim();
     const etiquetaPago = { contado:'contado', pagos:'2 pagos', pagos3:'3 pagos', pagos4:'4 pagos', pagos5:'5 pagos', pagos_sin_recargo:'2 pagos sin recargo', un_pago_abono:'1 pago con abono' }[tipo] || tipo;
-    // La marca va en la nota para que la PC entienda la venta aunque la hoja
-    // todavía no tenga las columnas nuevas.
     const marca = '[[KQV:' + JSON.stringify({ tipo_pago: tipo, abono: abono, primera_cuota: fecha, abono_modo: modo, referencia: referencia, prima_aviso: primaAviso || undefined }) + ']]';
 
     const btn = $('#v-guardar');
@@ -859,23 +941,22 @@ function pintarVender(app){
       if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó la venta');
 
       const lista = ventasLocales();
-      lista.unshift({
-        id: j.id, ts: Date.now(), cliente: cliente, perfume: p.nombre,
-        monto: total, prima: abono, tipo: tipo, modo: modo, estado: 'pendiente'
-      });
+      lista.unshift({ id: j.id, ts: Date.now(), cliente, perfume: p.nombre, monto: total, prima: abono, tipo, modo, estado: 'pendiente' });
       guardarVentasLocales(lista);
+
       $('#v-cli').value = '';
       $('#v-tel').value = '';
       $('#v-nota').value = '';
       $('#v-ref').value = '';
+      $('#v-prod').value = '';
+      $('#v-prod-buscar').value = '';
       const ab = $('#v-abono'); ab.dataset.tocado = '';
       $('#v-prima-check').checked = false;
       $('#v-prima-monto').value = '';
       $('#v-prima-fecha').value = '';
       $('#v-prima-datos').classList.add('oculto');
       actualizar();
-      pintarVentasLocales();
-      toast('🧾 Venta anotada — entra sola al sistema');
+      mostrarConfirmacionVenta(`✅ Venta anotada · ${cliente} · ${p.nombre} · ${money(total)}`);
     } catch(e){
       toast(e.message || 'No se pudo anotar', 'error');
     } finally {
@@ -884,8 +965,7 @@ function pintarVender(app){
     }
   };
 
-  pintarVentasLocales();
-  refrescarEstadoVentas();
+  actualizar();
 }
 
 function pintarVentasLocales(){
@@ -1535,6 +1615,7 @@ function pintarCobros(app){
     ${atras ? `<div class="aviso">⚠️ ${atras} con abono vencido. Tocalo para mandarle el recordatorio.</div>` : ''}
     ${cobrosError ? `<div class="aviso">${esc(cobrosError)}</div>` : ''}
     <div class="buscador"><span>🔍</span><input id="cb-q" placeholder="Buscar cliente o perfume…" autocomplete="off"></div>
+    <div id="cb-confirmacion" class="aviso ok" style="display:none"></div>
     <div id="cb-lista"></div>`;
 
   const pintar = () => {
@@ -1563,10 +1644,20 @@ function pintarCobros(app){
             <span class="tag">Abonado ${money(c.abonado)} de ${money(c.total)}</span>
           </div>
         </div>
-        <div style="font-size:19px;color:var(--green);align-self:center" title="Mandar recordatorio">📲</div>
+        <div style="display:flex;flex-direction:column;gap:8px;align-items:center;align-self:center">
+          ${abonosOn() ? `<span data-abonar="${esc(c.venta_id)}" style="font-size:20px;color:var(--gold2);cursor:pointer" title="Registrar abono">💵</span>` : ''}
+          <span style="font-size:19px;color:var(--green);cursor:pointer" title="Mandar recordatorio">📲</span>
+        </div>
       </div>`;
     }).join('');
 
+    cont.querySelectorAll('[data-abonar]').forEach(el => {
+      el.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const c = cobros.find(x => String(x.venta_id) === String(el.dataset.abonar));
+        if(c) abrirAbono(c);
+      });
+    });
     cont.querySelectorAll('[data-cobro]').forEach(el => {
       el.addEventListener('click', () => {
         const c = cobros.find(x => String(x.venta_id) === String(el.dataset.cobro));
@@ -1577,6 +1668,81 @@ function pintarCobros(app){
 
   $('#cb-q').addEventListener('input', pintar);
   pintar();
+}
+
+function mostrarConfirmacionCobro(txt){
+  const el = $('#cb-confirmacion');
+  if(!el) return;
+  el.textContent = txt;
+  el.style.display = '';
+  clearTimeout(window._confCobroTimer);
+  window._confCobroTimer = setTimeout(() => {
+    const x = $('#cb-confirmacion'); if(x) x.style.display = 'none';
+  }, 60000);
+}
+
+function abrirAbono(c){
+  if(!c) return;
+  const saldo = num(c.saldo);
+  const pend = Math.max(num(c.pendientes), 1);
+  const sugerido = num(c.proximo_monto) > 0 ? num(c.proximo_monto) : Math.round(saldo / pend);
+  const hoy = new Date();
+  const fechaHoy = isoFecha(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+  const wrap = $('#hoja-wrap');
+  wrap.innerHTML = `<div class="hoja-fondo">
+    <div class="hoja">
+      <div class="agarre"></div>
+      <h2>Registrar abono</h2>
+      <div class="sub">${esc(c.cliente)} · ${esc(c.producto || '')}</div>
+      <div class="aviso" style="margin:12px 0">Saldo pendiente: <b>${money(saldo)}</b></div>
+      <label class="f"><span>Monto del abono ₡</span><input id="ab-monto" type="number" min="1" step="100" value="${sugerido}" inputmode="numeric"></label>
+      <label class="f"><span>Fecha</span><input id="ab-fecha" type="date" value="${fechaHoy}"></label>
+      <div id="ab-resumen" class="hint"></div>
+      <div style="display:grid;gap:8px;margin-top:10px">
+        <button class="btn" id="ab-guardar">Registrar abono</button>
+        <button class="btn ghost" id="ab-cancelar">Cancelar</button>
+      </div>
+    </div>
+  </div>`;
+  const cerrar = () => { wrap.innerHTML = ''; };
+  const act = () => {
+    const m = Math.min(num($('#ab-monto').value), saldo);
+    $('#ab-resumen').textContent = m > 0 ? `Quedaría un saldo de ${money(Math.max(0, saldo - m))}` : '';
+  };
+  $('#ab-monto').addEventListener('input', act);
+  act();
+  $('#ab-cancelar').onclick = cerrar;
+  $('.hoja-fondo').addEventListener('click', e => { if(e.target.classList.contains('hoja-fondo')) cerrar(); });
+  $('#ab-guardar').onclick = async () => {
+    const t = token();
+    if(!t) return toast('Falta la clave en Acceso', 'error');
+    const monto = Math.min(num($('#ab-monto').value), saldo);
+    if(!(monto > 0)) return toast('Escribí el monto del abono', 'error');
+    const fecha = $('#ab-fecha').value || fechaHoy;
+    const btn = $('#ab-guardar');
+    btn.disabled = true; btn.textContent = 'Registrando…';
+    try {
+      const marca = '[[KQV:' + JSON.stringify({ venta_id: Number(c.venta_id) }) + ']]';
+      const r = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'movimiento', token: t, tipo: 'abono',
+          cliente: c.cliente || '', telefono: c.telefono || '', monto: monto,
+          fecha: fecha, nota: 'Abono desde el celular ' + marca,
+          dispositivo: 'app-celular'
+        })
+      });
+      const j = await r.json();
+      if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó el abono');
+      cerrar();
+      mostrarConfirmacionCobro(`✅ Abono de ${money(monto)} anotado · ${c.cliente}`);
+      setTimeout(() => { if(vista === 'cobros') cargarCobros(false); }, 12000);
+    } catch(e){
+      toast(e.message || 'No se pudo registrar', 'error');
+      btn.disabled = false; btn.textContent = 'Registrar abono';
+    }
+  };
 }
 
 /* ---------------- notas (avisos para la PC) ---------------- */
@@ -1865,7 +2031,7 @@ function pintarAjustes(app){
   app.innerHTML = `
     <div class="card">
       <h3>Clave de Google</h3>
-      <p class="hint" style="margin-bottom:10px">Se pega una sola vez en este teléfono. Sirve para ver los saldos y subir las notas a la hoja.</p>
+      <p class="hint" style="margin-bottom:10px">Se pega una sola vez en este teléfono. Sirve para ver los saldos, anotar abonos y vender.</p>
       <label class="f"><span>Clave (token)</span><input id="a-token" type="password" placeholder="Pegala acá" autocomplete="new-password"></label>
       <div style="display:grid;gap:8px">
         <button class="btn" id="a-guardar">Guardar clave</button>
@@ -1882,6 +2048,36 @@ function pintarAjustes(app){
         <p class="hint" id="a-instalar-tip" style="margin-top:2px"></p>
         <button class="btn rojo" id="a-limpiar">Borrar datos guardados</button>
       </div>
+    </div>
+
+    <div class="card">
+      <h3>Vender y cobrar</h3>
+      <label class="f"><span style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px"><input type="checkbox" id="a-abonos" style="width:auto"> Permitir abonos desde el teléfono</span></label>
+      <p class="hint">Si lo apagás, en Cobros solo se pueden mandar recordatorios.</p>
+    </div>
+
+    <div class="card">
+      <h3>Pedir un perfume</h3>
+      <p class="hint" style="margin-bottom:10px">Llega a la PC como pedido. Ahí lo revisás y lo cargás al inventario.</p>
+      <label class="f"><span>Perfume</span><input id="p-nombre" placeholder="Ej: Eros Flame" autocomplete="off"></label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label class="f"><span>Marca</span><input id="p-marca" placeholder="Versace" autocomplete="off"></label>
+        <label class="f"><span>ml</span><input id="p-ml" type="number" min="1" inputmode="numeric"></label>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label class="f"><span>Género</span><select id="p-cat">
+          <option value="">Elegí...</option><option>Hombre</option><option>Mujer</option><option>Unisex</option>
+        </select></label>
+        <label class="f"><span>Concentración</span><select id="p-conc">
+          <option value="">Elegí...</option><option>EDT</option><option>EDP</option><option>Parfum</option>
+          <option>Elixir</option><option>Extrait</option><option value="__no__">No aplica</option>
+        </select></label>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label class="f"><span>Costo USD</span><input id="p-usd" type="number" step="0.01" inputmode="decimal"></label>
+        <label class="f"><span>Cantidad</span><input id="p-cant" type="number" min="1" value="1" inputmode="numeric"></label>
+      </div>
+      <button class="btn" id="p-enviar">Enviar pedido a la PC</button>
     </div>
 
     <div class="card">
@@ -1908,6 +2104,54 @@ function pintarAjustes(app){
   $('#a-datos').textContent = datos.guardado
     ? (datos.inventario.length + ' perfumes · actualizado ' + hace(datos.guardado))
     : 'Sin datos guardados todavía.';
+
+  const chkAbonos = $('#a-abonos');
+  if(chkAbonos){
+    chkAbonos.checked = abonosOn();
+    chkAbonos.onchange = e => {
+      guardarAbonosOn(e.target.checked);
+      toast(e.target.checked ? '✅ Abonos desde el teléfono activados' : 'Abonos desde el teléfono desactivados');
+    };
+  }
+
+  $('#p-enviar').onclick = async () => {
+    const t = token();
+    if(!t) return toast('Falta la clave en Acceso', 'error');
+    const nombre = $('#p-nombre').value.trim();
+    if(!nombre) return toast('Escribí el nombre del perfume', 'error');
+    const pd = {
+      marca: $('#p-marca').value.trim(),
+      categoria: $('#p-cat').value,
+      concentracion: $('#p-conc').value === '__no__' ? '' : $('#p-conc').value,
+      ml: Math.round(num($('#p-ml').value)) || 0,
+      costo_usd: num($('#p-usd').value) || 0,
+      cantidad: Math.max(1, Math.round(num($('#p-cant').value) || 1))
+    };
+    const marca = '[[KQV:' + JSON.stringify(Object.assign({ pedido: true }, pd)) + ']]';
+    const btn = $('#p-enviar');
+    btn.disabled = true; btn.textContent = 'Enviando…';
+    try {
+      const r = await fetch(API, {
+        method:'POST',
+        headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action:'movimiento', token:t, tipo:'pedido',
+          perfume: nombre, cantidad: pd.cantidad,
+          nota: 'Pedido desde el celular ' + marca,
+          dispositivo:'app-celular'
+        })
+      });
+      const j = await r.json();
+      if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó el pedido');
+      toast('📦 Pedido enviado: revisalo en la PC');
+      ['p-nombre','p-marca','p-ml','p-usd'].forEach(id => $('#'+id).value = '');
+      $('#p-cat').value = ''; $('#p-conc').value = ''; $('#p-cant').value = 1;
+    } catch(e){
+      toast(e.message || 'No se pudo enviar', 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Enviar pedido a la PC';
+    }
+  };
 
   $('#a-guardar').onclick = () => {
     const t = $('#a-token').value.trim();
@@ -1975,7 +2219,7 @@ window.addEventListener('online', () => { pintarEstado(); });
 window.addEventListener('offline', () => pintarEstado(true));
 window.addEventListener('hashchange', () => {
   const h = location.hash.replace('#','');
-  if(['stock','vender','cobros','notas','catalogo','ajustes'].includes(h) && h !== vista){
+  if(['stock','vender','cobros','catalogo','ajustes'].includes(h) && h !== vista){
     vista = h;
     render();
     if(h === 'cobros') cargarCobros(false);
@@ -1986,6 +2230,11 @@ window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   instalarEvento = e;
   if(vista === 'ajustes') render();
+});
+
+document.addEventListener('click', ev => {
+  const box = document.querySelector('#v-prod-sug');
+  if(box && !box.contains(ev.target) && ev.target.id !== 'v-prod-buscar') box.classList.add('oculto');
 });
 
 /* ---------------- arranque ---------------- */
@@ -2014,16 +2263,14 @@ window.addEventListener('beforeinstallprompt', e => {
   } catch(e){}
 
   const h = location.hash.replace('#','');
-  if(['stock','vender','cobros','notas','catalogo','ajustes'].includes(h)) vista = h;
+  if(['stock','vender','cobros','catalogo','ajustes'].includes(h)) vista = h;
 
   render();
   pintarEstado(!navigator.onLine);
 
   sincronizar(true).then(() => {
-    if(token()) { cargarCobros(false); subirNotasPendientes(true); }
+    if(token()) cargarCobros(false);
   });
-  window.addEventListener('online', () => { if(token()) subirNotasPendientes(true); });
-  setInterval(() => { if(token() && notas.some(n => !n.subida)) subirNotasPendientes(true); }, 60000);
 
   if('serviceWorker' in navigator){
     window.addEventListener('load', () => {
