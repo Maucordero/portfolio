@@ -246,7 +246,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.11.5';
+const VERSION = '1.12.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', numeros:'kq_numeros_v1' };
@@ -1795,13 +1795,61 @@ async function cargarNumeros(mostrar){
   }
 }
 
+// Sticker de agradecimiento (mismo diseño que la PC)
+async function imagenGraciasCel(v){
+  let logo = await cargarBitmap('./logo-gracias.png');
+  if(!logo) logo = await cargarBitmap('./logo.png');
+  if(!logo) return null;
+  const W = 2000;
+  const logoH = Math.round(W * logo.height / logo.width);
+  const nombre = primerNombreDe(v.cliente).toUpperCase();
+  const producto = (String(v.perfume || '') + (num(v.cantidad) > 1 ? ' × ' + num(v.cantidad) : '')).trim();
+  const saludo = nombre ? `¡GRACIAS, ${nombre}!` : '¡GRACIAS POR TU COMPRA!';
+
+  const cv = document.createElement('canvas');
+  const ctx = cv.getContext('2d');
+  cv.width = W; cv.height = 10;
+  const maxTxt = W - 180;
+  ctx.font = "bold 80px Georgia, 'Times New Roman', serif";
+  const lSaludo = envolverTexto(ctx, saludo, maxTxt).slice(0, 2);
+  ctx.font = "bold 54px 'Segoe UI', Arial, sans-serif";
+  const lProd = producto ? envolverTexto(ctx, producto, maxTxt).slice(0, 2) : [];
+
+  const H = logoH + 70 + lSaludo.length * 96 + (producto ? 60 + lProd.length * 68 : 0) + 70;
+  cv.height = H;
+  ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(logo, 0, 0, W, logoH);
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  let y = logoH + 70;
+  ctx.fillStyle = '#c9a24b'; ctx.font = "bold 80px Georgia, 'Times New Roman', serif";
+  for(const ln of lSaludo){ ctx.fillText(ln, W / 2, y); y += 96; }
+  if(producto){
+    ctx.fillStyle = '#98a0af'; ctx.font = "46px 'Segoe UI', Arial, sans-serif";
+    ctx.fillText('por tu compra de', W / 2, y); y += 60;
+    ctx.fillStyle = '#e8eaf0'; ctx.font = "bold 54px 'Segoe UI', Arial, sans-serif";
+    for(const ln of lProd){ ctx.fillText(ln, W / 2, y); y += 68; }
+  }
+  return await new Promise(r => cv.toBlob(r, 'image/png'));
+}
+
+async function enviarGraciasCel(v){
+  const tel = String(v.telefono || '').replace(/\D/g, '');
+  if(tel.length < 8) return toast('Ese cliente no tiene teléfono', 'error');
+  toast('🙏 Armando el agradecimiento…');
+  let blob = null;
+  try { blob = await imagenGraciasCel(v); } catch(e){ blob = null; }
+  if(!blob) return toast('No pude armar la imagen', 'error');
+  await entregarImagen(blob, '🙏 Agradecimiento listo — pegalo en el chat');
+  setTimeout(() => abrirWhatsApp('', tel), 700);
+}
+
 function cajaNum(etiqueta, valor, color){
   return `<div style="background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px">
     <div style="font-size:10.5px;letter-spacing:.05em;color:var(--muted);text-transform:uppercase">${etiqueta}</div>
     <div style="font-size:17px;font-weight:700;line-height:1.25;color:${color || 'var(--text)'};margin-top:2px">${valor}</div>
   </div>`;
 }
-
 function pintarNumeros(app){
   if(!token()){
     app.innerHTML = `<div class="card">
@@ -1888,12 +1936,22 @@ function pintarNumeros(app){
             ${num(v.saldo) > 0.5 ? `<span class="tag" style="color:var(--red)">Saldo ${money(v.saldo)}</span>` : ''}
           </div>
         </div>
+        ${num(v.saldo) <= 0.5 && String(v.telefono || '').replace(/\D/g,'').length >= 8
+          ? `<button class="btn ghost sm" data-gracias="${esc(v.id)}" title="Enviar agradecimiento por WhatsApp" style="align-self:center;font-size:18px;padding:8px 10px;margin-left:2px">🙏</button>`
+          : ''}
       </div>`).join('') : `<div class="vacio"><span class="em">📊</span>No hay ventas en este grupo.</div>`}
     </div>`;
 
   $('#nu-ref').onclick = () => cargarNumeros(true);
   app.querySelectorAll('[data-num-f]').forEach(b => {
     b.onclick = () => { numsFiltro = b.dataset.numF; render(); };
+  });
+  app.querySelectorAll('[data-gracias]').forEach(b => {
+    b.onclick = async (ev) => {
+      ev.stopPropagation();
+      const v = ventas.find(x => String(x.id) === String(b.dataset.gracias));
+      if(v) await enviarGraciasCel(v);
+    };
   });
 }
 
