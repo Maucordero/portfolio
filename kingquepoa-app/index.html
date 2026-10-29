@@ -100,6 +100,17 @@
     font-size:11px;padding:3px 8px;border-radius:999px;
     background:var(--panel2);border:1px solid var(--line);color:var(--muted)
   }
+  .ct-grupo{border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--panel2);overflow:hidden}
+  .ct-grupo>summary{list-style:none;cursor:pointer;padding:10px 12px;font-weight:600;display:flex;gap:8px;align-items:center;justify-content:space-between}
+  .ct-grupo>summary::-webkit-details-marker{display:none}
+  .ct-grupo[open]>summary{border-bottom:1px solid var(--line);background:var(--panel3)}
+  .ct-grupo .ct-sub{padding:4px 12px 8px}
+  .ct-dist{border-top:1px solid var(--line);padding:6px 0}
+  .ct-dist:first-child{border-top:0}
+  .ct-dist>summary{list-style:none;cursor:pointer;display:flex;gap:8px;align-items:center;justify-content:space-between;font-size:13px;padding:4px 0}
+  .ct-dist>summary::-webkit-details-marker{display:none}
+  .ct-det{font-size:12px;color:var(--muted);padding:6px 0 2px;line-height:1.6}
+  .ct-det b{color:var(--text)}
 
   .vacio{text-align:center;color:var(--muted);padding:40px 10px;font-size:14px}
   .vacio .em{font-size:34px;display:block;margin-bottom:8px}
@@ -236,7 +247,7 @@
   <button data-v="vender" class="oculto"><i>🛒</i><span>Vender</span></button>
   <button data-v="cobros" class="oculto"><i>💰</i><span>Cobros</span></button>
   <button data-v="numeros" class="oculto"><i>📊</i><span>Números</span></button>
-  <button data-v="catalogo"><i>📋</i><span>Catálogo</span></button>
+  <button data-v="cotizar" class="oculto"><i>🧮</i><span>Cotizar</span></button>
   <button data-v="ajustes" class="oculto"><i>⚙️</i><span>Ajustes</span></button>
 </nav>
 
@@ -251,15 +262,17 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.13.1';
+const VERSION = '1.14.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
-const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1' };
+const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1' };
 
 let datos = { inventario:[], config:{}, guardado:null };
 let cobros = [];
 let nums = null, numsError = '', numsFiltro = 'todas', cargandoNums = false;
 let costos = null, costosError = '', cargandoCostos = false;
+let cotizacionesTmp = [];
+let porComprar = [];
 let vista = 'stock';
 let filtro = { q:'', cat:'Todos', soloStock:false };
 let notas = [];
@@ -410,7 +423,7 @@ function guardarAbonosOn(v){
 /* ---------------- roles: dueño vs visitante ---------------- */
 function aplicarRol(){
   const dueno = esDueno();
-  const privadas = ['vender','cobros','numeros','ajustes'];
+  const privadas = ['vender','cobros','numeros','cotizar','ajustes'];
   let visibles = 0;
   document.querySelectorAll('nav button').forEach(b => {
     const ocultar = !dueno && privadas.indexOf(b.dataset.v) !== -1;
@@ -570,6 +583,7 @@ function render(){
   if(vista === 'vender') return pintarVender(app);
   if(vista === 'cobros') return pintarCobros(app);
   if(vista === 'numeros') return pintarNumeros(app);
+  if(vista === 'cotizar') return pintarCotizar(app);
   if(vista === 'catalogo') return pintarCatalogo(app);
   if(vista === 'ajustes') return pintarAjustes(app);
 }
@@ -591,6 +605,11 @@ function pintarStock(app){
     render();
   });
   pintarLista();
+  const pieCat = document.createElement('div');
+  pieCat.style.cssText = 'text-align:center;margin:18px 0 8px';
+  pieCat.innerHTML = '<button class="btn ghost sm" id="btn-catalogo-stock">📋 Ver catálogo</button>';
+  app.appendChild(pieCat);
+  pieCat.querySelector('#btn-catalogo-stock').onclick = () => { vista = 'catalogo'; render(); window.scrollTo(0,0); };
   if(!esDueno()){
     const pie = document.createElement('div');
     pie.style.cssText = 'text-align:center;margin:30px 0 14px';
@@ -2319,6 +2338,340 @@ function pintarNumeros(app){
   });
 }
 
+/* ---------------- Cotizar (solo dueño) ---------------- */
+function tcCel(){
+  const rows = (costos && Array.isArray(costos.costos)) ? costos.costos : [];
+  const t = rows.find(r => num(r.tc) > 0);
+  if(t) return num(t.tc);
+  const n = nums && nums.resumen && num(nums.resumen.tc);
+  return n > 0 ? n : 470;
+}
+
+function margenesCel(){
+  const rows = (costos && Array.isArray(costos.costos)) ? costos.costos : [];
+  for(const r of rows){
+    try {
+      const j = JSON.parse(r.margenes || '[]');
+      if(Array.isArray(j) && j.length) return j;
+    } catch(e){}
+  }
+  return [];
+}
+
+function margenPctCel(costoUsd){
+  const m = margenesCel().find(r => (Number(costoUsd) || 0) <= Number(r.max));
+  return m ? num(m.pct) : null;
+}
+
+function precioSugeridoCel(costoUsd, p){
+  const tc = tcCel();
+  const pct = margenPctCel(costoUsd);
+  if(pct != null) return { precio: mil((Number(costoUsd) || 0) * tc * (1 + pct / 100)), pct, fuente: 'tabla' };
+  const c = p ? costoDe(p) : null;
+  const price = p ? num(p.precio_crc) : 0;
+  if(c && price > 0){
+    const pctEf = ((price - num(c.costo_crc)) / price) * 100;
+    if(pctEf > 0) return { precio: mil((Number(costoUsd) || 0) * tc * (1 + pctEf / 100)), pct: pctEf, fuente: 'producto' };
+  }
+  return null;
+}
+
+function distribuidoresConocidos(){
+  const set = new Set();
+  [...cotizacionesTmp, ...porComprar].forEach(c => {
+    const d = String((c && c.distribuidor) || '').trim();
+    if(d) set.add(d);
+  });
+  return [...set].sort((a, b) => a.localeCompare(b, 'es'));
+}
+
+function agruparCotizaciones(lista){
+  const map = new Map();
+  for(const c of lista){
+    const k = norm(c.producto);
+    if(!map.has(k)) map.set(k, { producto: c.producto, items: [] });
+    map.get(k).items.push(c);
+  }
+  return [...map.values()]
+    .map(g => ({ ...g, items: g.items.slice().sort((a, b) => num(a.costo_crc) - num(b.costo_crc)) }))
+    .sort((a, b) => a.producto.localeCompare(b.producto, 'es'));
+}
+
+function detalleCotizacion(c){
+  const tc = num(c.tc) || tcCel();
+  const partes = [];
+  partes.push(`Costo: <b>${c.moneda === 'CRC' ? money(c.monto) : usd(c.monto)}</b> · ${c.moneda === 'CRC' ? usd(c.costo_usd) : money(c.costo_crc)}`);
+  partes.push(`Tipo de cambio: ₡${tc}`);
+  if(num(c.costo_actual_crc) > 0){
+    const dif = num(c.costo_actual_crc) - num(c.costo_crc);
+    const pct = (num(c.costo_actual_crc) > 0) ? (dif / num(c.costo_actual_crc)) * 100 : 0;
+    partes.push(dif >= 0
+      ? `Tu costo actual: <b>${money(c.costo_actual_crc)}</b> · este distribuidor está <b style="color:var(--green)">${pct.toFixed(1)}% más barato</b> (ahorrás ${money(dif)})`
+      : `Tu costo actual: <b>${money(c.costo_actual_crc)}</b> · este distribuidor está <b style="color:var(--red)">${Math.abs(pct).toFixed(1)}% más caro</b> (${money(Math.abs(dif))} más)`);
+  }
+  if(num(c.precio_actual) > 0) partes.push(`Tu precio de venta actual: <b>${money(c.precio_actual)}</b>`);
+  if(num(c.precio_final) > 0){
+    partes.push(`Precio final con tu margen: <b style="color:var(--gold2)">${money(c.precio_final)}</b>`);
+    partes.push(`Ganancia: <b>${money(c.ganancia)}</b> · Margen: <b>${num(c.margen_tabla).toFixed(1)}%</b>`);
+  } else {
+    partes.push('Precio final: actualizá el script de Google a la versión 1.5.3 para tener la tabla de márgenes.');
+  }
+  if(c.fecha) partes.push(`<span style="font-size:11px">${new Date(c.fecha).toLocaleDateString('es-CR')}</span>`);
+  return partes.join('<br>');
+}
+
+function pintarDatalistDist(){
+  const dl = $('#ct-dist-list');
+  if(!dl) return;
+  dl.innerHTML = distribuidoresConocidos().map(d => `<option value="${esc(d)}">`).join('');
+}
+
+function pintarTmpCotizaciones(){
+  const cont = $('#ct-tmp');
+  if(!cont) return;
+  const groups = agruparCotizaciones(cotizacionesTmp);
+  if(!groups.length){
+    cont.innerHTML = '<div class="vacio" style="padding:16px"><span class="em">🧮</span>Cotizá un perfume y aparecerá acá.</div>';
+    return;
+  }
+  cont.innerHTML = groups.map(g => {
+    const best = g.items[0];
+    const rows = g.items.map((c, i) => {
+      const mejor = i === 0;
+      return `<details class="ct-dist">
+        <summary>
+          <span>${esc(c.distribuidor)} ${mejor ? '<span class="tag" style="color:var(--green)">mejor</span>' : ''}</span>
+          <b style="color:var(--gold2)">${money(c.precio_final || c.costo_crc)}</b>
+        </summary>
+        <div class="ct-det">${detalleCotizacion(c)}
+          <div class="fila" style="margin-top:7px;gap:6px;flex-wrap:wrap">
+            <button class="btn ghost sm" data-ct-save="${esc(c.id)}">💾 Guardar para comprar</button>
+            <button class="btn ghost sm" data-ct-del="${esc(c.id)}">🗑</button>
+          </div>
+        </div>
+      </details>`;
+    }).join('');
+    return `<details class="ct-grupo">
+      <summary>
+        <span>${esc(g.producto)} <span class="muted" style="font-weight:400;font-size:11px">${g.items.length} distribuidor${g.items.length === 1 ? '' : 'es'}</span></span>
+        <b style="color:var(--gold2)">${money(best.precio_final || best.costo_crc)}</b>
+      </summary>
+      <div class="ct-sub">${rows}</div>
+    </details>`;
+  }).join('');
+  cont.querySelectorAll('[data-ct-save]').forEach(b => {
+    b.onclick = (ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      const c = cotizacionesTmp.find(x => String(x.id) === b.dataset.ctSave);
+      if(c) guardarParaComprar(c);
+    };
+  });
+  cont.querySelectorAll('[data-ct-del]').forEach(b => {
+    b.onclick = (ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      cotizacionesTmp = cotizacionesTmp.filter(x => String(x.id) !== b.dataset.ctDel);
+      pintarTmpCotizaciones();
+      pintarDatalistDist();
+    };
+  });
+}
+
+function pintarPorComprar(){
+  const cont = $('#ct-sav');
+  if(!cont) return;
+  const groups = agruparCotizaciones(porComprar);
+  if(!groups.length){
+    cont.innerHTML = '<div class="vacio" style="padding:16px"><span class="em">🛒</span>No guardaste ningún producto para comprar.</div>';
+    return;
+  }
+  cont.innerHTML = groups.map(g => {
+    const best = g.items[0];
+    const rows = g.items.map((c, i) => `<details class="ct-dist">
+      <summary>
+        <span>${esc(c.distribuidor)} ${i === 0 ? '<span class="tag" style="color:var(--green)">mejor</span>' : ''}</span>
+        <b style="color:var(--gold2)">${money(c.precio_final || c.costo_crc)}</b>
+      </summary>
+      <div class="ct-det">${detalleCotizacion(c)}
+        <div class="fila" style="margin-top:7px;gap:6px;flex-wrap:wrap">
+          <button class="btn ghost sm" data-ct-del-sav="${esc(c.id)}">🗑 Quitar</button>
+        </div>
+      </div>
+    </details>`).join('');
+    return `<details class="ct-grupo">
+      <summary>
+        <span>${esc(g.producto)} <span class="muted" style="font-weight:400;font-size:11px">${g.items.length} distribuidor${g.items.length === 1 ? '' : 'es'}</span></span>
+        <b style="color:var(--gold2)">${money(best.precio_final || best.costo_crc)}</b>
+      </summary>
+      <div class="ct-sub">${rows}</div>
+    </details>`;
+  }).join('');
+  cont.querySelectorAll('[data-ct-del-sav]').forEach(b => {
+    b.onclick = (ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      porComprar = porComprar.filter(x => String(x.id) !== b.dataset.ctDelSav);
+      guardarLS(LS.porComprar, porComprar);
+      pintarPorComprar();
+    };
+  });
+}
+
+function guardarParaComprar(cot){
+  const k = norm(cot.producto) + '|' + norm(cot.distribuidor);
+  porComprar = porComprar.filter(x => (norm(x.producto) + '|' + norm(x.distribuidor)) !== k);
+  porComprar.unshift(JSON.parse(JSON.stringify(cot)));
+  guardarLS(LS.porComprar, porComprar);
+  pintarPorComprar();
+  pintarDatalistDist();
+  toast('💾 Guardado para comprar');
+}
+
+function mostrarSugCot(){
+  const box = $('#ct-sug');
+  if(!box) return;
+  const q = norm($('#ct-buscar').value);
+  if(q.length < 2){ box.classList.add('oculto'); box.innerHTML = ''; return; }
+  const lista = datos.inventario
+    .filter(p => norm(p.nombre).includes(q) || norm(p.marca).includes(q))
+    .slice(0, 8);
+  if(!lista.length){ box.classList.add('oculto'); box.innerHTML = ''; return; }
+  box.innerHTML = lista.map(p => `<div class="sug" data-ct="${esc(p.id)}">
+    <span>${esc(p.nombre)}</span><span class="s-mar">${esc(p.marca || '')}</span>
+  </div>`).join('');
+  box.classList.remove('oculto');
+}
+
+function calcularCotizacion(){
+  const pid = $('#ct-prod').value;
+  const p = pid ? datos.inventario.find(x => String(x.id) === String(pid)) : null;
+  const nombre = p ? p.nombre : $('#ct-buscar').value.trim();
+  if(!nombre) return toast('Elegí o escribí un perfume', 'error');
+  const distribuidor = $('#ct-dist').value.trim() || 'Sin distribuidor';
+  const monto = num($('#ct-monto').value);
+  if(!(monto > 0)) return toast('Escribí el costo', 'error');
+  const moneda = $('#ct-moneda').value === 'USD' ? 'USD' : 'CRC';
+  const tc = tcCel();
+  const costoUsd = moneda === 'USD' ? monto : monto / tc;
+  const costoCrc = moneda === 'CRC' ? monto : monto * tc;
+  const costoAct = p ? costoDe(p) : null;
+  const costoActCrc = costoAct ? num(costoAct.costo_crc) : 0;
+  const precioAct = p ? num(p.precio_crc) : 0;
+  const sug = precioSugeridoCel(costoUsd, p);
+  const dif = costoActCrc > 0 ? costoActCrc - costoCrc : 0;
+  const pct = costoActCrc > 0 ? (dif / costoActCrc) * 100 : 0;
+
+  const cot = {
+    id: 'COT-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+    producto: nombre,
+    producto_id: p ? p.id : '',
+    distribuidor: distribuidor,
+    monto: monto,
+    moneda: moneda,
+    tc: tc,
+    costo_usd: Math.round(costoUsd * 100) / 100,
+    costo_crc: Math.round(costoCrc),
+    costo_actual_crc: Math.round(costoActCrc),
+    precio_actual: Math.round(precioAct),
+    precio_final: sug ? sug.precio : 0,
+    margen_tabla: sug ? sug.pct : 0,
+    ganancia: sug ? sug.precio - Math.round(costoCrc) : 0,
+    dif_costo: Math.round(dif),
+    dif_pct: pct,
+    fecha: new Date().toISOString(),
+  };
+
+  const k = norm(cot.producto) + '|' + norm(cot.distribuidor);
+  cotizacionesTmp = cotizacionesTmp.filter(x => (norm(x.producto) + '|' + norm(x.distribuidor)) !== k);
+  cotizacionesTmp.unshift(cot);
+
+  const res = $('#ct-resultado');
+  res.innerHTML = `<div class="aviso" style="margin-top:12px">
+    <div style="font-weight:700">${esc(cot.producto)} · ${esc(cot.distribuidor)}</div>
+    <div style="font-size:12.5px;margin-top:5px">${detalleCotizacion(cot)}</div>
+    <div class="fila" style="margin-top:8px;gap:6px;flex-wrap:wrap">
+      <button class="btn sm" id="ct-save-result">💾 Guardar para comprar</button>
+    </div>
+  </div>`;
+  const b = $('#ct-save-result');
+  if(b) b.onclick = () => guardarParaComprar(cot);
+  pintarTmpCotizaciones();
+  pintarDatalistDist();
+}
+
+function pintarCotizar(app){
+  if(!esDueno()){ vista = 'stock'; return render(); }
+  if(!costos) setTimeout(() => cargarCostos(false), 80);
+  const tc = tcCel();
+  const dists = distribuidoresConocidos();
+  app.innerHTML = `
+    <div class="card">
+      <h3>Cotizar</h3>
+      <p class="hint" style="margin-bottom:10px">Cargá el precio de un distribuidor en colones o dólares y mirá tu precio final con el margen.</p>
+      <label class="f" style="position:relative"><span>Perfume</span>
+        <input id="ct-buscar" placeholder="Buscá en el sistema o escribí uno nuevo" autocomplete="off">
+        <input type="hidden" id="ct-prod">
+        <div id="ct-sug" class="sugerencias-app oculto"></div>
+      </label>
+      <label class="f"><span>Distribuidor</span>
+        <input id="ct-dist" list="ct-dist-list" placeholder="Ej: Distribuidora Chirquí" autocomplete="off">
+        <datalist id="ct-dist-list">${dists.map(d => `<option value="${esc(d)}">`).join('')}</datalist>
+      </label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label class="f"><span>Costo</span><input id="ct-monto" type="number" min="0" step="1" inputmode="decimal" placeholder="0"></label>
+        <label class="f"><span>Moneda</span><select id="ct-moneda"><option value="CRC">₡ Colones</option><option value="USD">$ Dólares</option></select></label>
+      </div>
+      <div class="hint" id="ct-tc" style="margin:6px 0 10px">Tipo de cambio: ₡${tc}</div>
+      <button class="btn" id="ct-calcular">Calcular</button>
+      <div id="ct-resultado"></div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <h3 style="margin:0;flex:1">Cotizaciones de ahora</h3>
+        <button class="btn ghost sm" id="ct-borrar-tmp">🗑 Borrar lista</button>
+      </div>
+      <div class="hint" style="margin-bottom:6px">Esta lista es temporal: no se guarda.</div>
+      <div id="ct-tmp"></div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <h3 style="margin:0;flex:1">🛒 Para comprar</h3>
+        <button class="btn ghost sm" id="ct-borrar-sav">🗑 Borrar todo</button>
+      </div>
+      <div class="hint" style="margin-bottom:6px">Guardados individualmente; quedan hasta que los borres.</div>
+      <div id="ct-sav"></div>
+    </div>`;
+
+  $('#ct-buscar').addEventListener('input', () => {
+    $('#ct-prod').value = '';
+    mostrarSugCot();
+  });
+  $('#ct-sug').addEventListener('click', ev => {
+    const d = ev.target.closest('[data-ct]'); if(!d) return;
+    const p = datos.inventario.find(x => String(x.id) === d.dataset.ct);
+    if(p){ $('#ct-prod').value = p.id; $('#ct-buscar').value = p.nombre; }
+    $('#ct-sug').classList.add('oculto');
+  });
+  $('#ct-calcular').onclick = calcularCotizacion;
+  $('#ct-borrar-tmp').onclick = () => {
+    if(!cotizacionesTmp.length) return;
+    if(!confirm('¿Borrar todas las cotizaciones de ahora?')) return;
+    cotizacionesTmp = [];
+    pintarTmpCotizaciones();
+    toast('Lista de cotizaciones borrada');
+  };
+  $('#ct-borrar-sav').onclick = () => {
+    if(!porComprar.length) return;
+    if(!confirm('¿Borrar todos los productos guardados para comprar?')) return;
+    porComprar = [];
+    guardarLS(LS.porComprar, porComprar);
+    pintarPorComprar();
+    toast('Lista de compras borrada');
+  };
+  pintarTmpCotizaciones();
+  pintarPorComprar();
+}
+
 /* ---------------- notas (avisos para la PC) ---------------- */
 
 function guardarNotas(){
@@ -2774,12 +3127,14 @@ function pintarAjustes(app){
       localStorage.removeItem(LS.cobros);
       localStorage.removeItem(LS.numeros);
       localStorage.removeItem(LS.costos);
+      localStorage.removeItem(LS.porComprar);
     } catch(e){}
     datos = { inventario:[], config:{}, guardado:null };
     notas = [];
     cobros = [];
     nums = null;
     costos = null;
+    porComprar = [];
     toast('Datos borrados');
     sincronizar(false);
     render();
@@ -2812,7 +3167,7 @@ window.addEventListener('online', () => { pintarEstado(); });
 window.addEventListener('offline', () => pintarEstado(true));
 window.addEventListener('hashchange', () => {
   const h = location.hash.replace('#','');
-  if(['stock','vender','cobros','numeros','catalogo','ajustes'].includes(h) && h !== vista){
+  if(['stock','vender','cobros','numeros','cotizar','catalogo','ajustes'].includes(h) && h !== vista){
     vista = h;
     render();
     if(h === 'stock' && token()) refrescarEstadoVentas();
@@ -2850,6 +3205,9 @@ document.addEventListener('click', ev => {
   const gco = leerLS(LS.costos, null);
   if(gco && Array.isArray(gco.costos)) costos = gco;
 
+  porComprar = leerLS(LS.porComprar, []);
+  if(!Array.isArray(porComprar)) porComprar = [];
+
   // Permite cargar la clave una sola vez desde un enlace:  ...?clave=XXXX
   try {
     const params = new URLSearchParams(location.search);
@@ -2864,7 +3222,7 @@ document.addEventListener('click', ev => {
   } catch(e){}
 
   const h = location.hash.replace('#','');
-  if(['stock','vender','cobros','numeros','catalogo','ajustes'].includes(h)) vista = h;
+  if(['stock','vender','cobros','numeros','cotizar','catalogo','ajustes'].includes(h)) vista = h;
 
   render();
   pintarEstado(!navigator.onLine);
