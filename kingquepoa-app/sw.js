@@ -7,6 +7,8 @@ const ARCHIVOS = [
   './',
   './index.html',
   './manifest.webmanifest',
+  './logo.png',
+  './logo-gracias.png',
   './icons/icon-192-v2.png',
   './icons/icon-512-v2.png'
 ];
