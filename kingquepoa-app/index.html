@@ -2541,6 +2541,7 @@ function mostrarSugCot(){
 }
 
 function calcularCotizacion(){
+  $('#ct-sug').classList.add('oculto');
   const pid = $('#ct-prod').value;
   const p = pid ? datos.inventario.find(x => String(x.id) === String(pid)) : null;
   const nombre = p ? p.nombre : $('#ct-buscar').value.trim();
