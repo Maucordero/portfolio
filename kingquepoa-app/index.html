@@ -246,7 +246,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.11.3';
+const VERSION = '1.11.4';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', numeros:'kq_numeros_v1' };
@@ -1427,8 +1427,18 @@ async function imagenCobro(cli){
     ctx.fillText('Saldo pendiente:', rx, y + 48);
     ctx.fillStyle = '#c0392b'; ctx.font = 'bold 42px ' + FUENTE;
     ctx.fillText(money(num(v.saldo)), rx, y + 84);
+    // Abonado: el monto va en dorado; "de total" en gris.
+    const tAntes = 'Abonado ', tMonto = money(num(v.abonado)), tDespues = ' de ' + money(num(v.total));
+    ctx.font = '22px ' + FUENTE;
+    const wAntes = ctx.measureText(tAntes).width;
+    ctx.font = 'bold 22px ' + FUENTE;
+    const wMonto = ctx.measureText(tMonto).width;
     ctx.fillStyle = '#8a8f99'; ctx.font = '22px ' + FUENTE;
-    ctx.fillText('Abonado ' + money(num(v.abonado)) + ' de ' + money(num(v.total)), rx, y + 136);
+    ctx.fillText(tAntes, rx, y + 136);
+    ctx.fillStyle = '#c9a24b'; ctx.font = 'bold 22px ' + FUENTE;
+    ctx.fillText(tMonto, rx + wAntes, y + 136);
+    ctx.fillStyle = '#8a8f99'; ctx.font = '22px ' + FUENTE;
+    ctx.fillText(tDespues, rx + wAntes + wMonto, y + 136);
     ctx.textAlign = 'center';
     y += boxH + 26;
 
