@@ -80,6 +80,11 @@
   .foto img{width:100%;height:100%;object-fit:cover;display:block}
   .foto img.logo-fallback{object-fit:contain;padding:10px;opacity:.55}
   .prod .info{flex:1;min-width:0}
+  /* Miniatura grande: la foto ocupa todo el alto del lado izquierdo */
+  .prod-foto{padding:0;align-items:stretch;overflow:hidden;min-height:112px}
+  .prod-foto .foto{width:112px;height:auto;align-self:stretch;border-radius:0;flex:0 0 112px}
+  .prod-foto .foto img{height:100%;border-radius:0}
+  .prod-foto .info{padding:12px 12px 12px 10px;display:flex;flex-direction:column;justify-content:center}
   .prod .nom{font-weight:600;font-size:14.5px;line-height:1.3;margin-bottom:2px}
   .prod .mar{font-size:12.5px;color:var(--muted);margin-bottom:6px}
   .fila{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -246,7 +251,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.12.0';
+const VERSION = '1.12.1';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', numeros:'kq_numeros_v1' };
@@ -592,7 +597,7 @@ function pintarLista(){
     const st = num(p.stock);
     const foto = fotoUrl(p);
     const prima = primaDe(p);
-    return `<div class="prod" data-id="${esc(p.id)}">
+    return `<div class="prod prod-foto" data-id="${esc(p.id)}">
       <div class="foto">${foto ? `<img src="${esc(foto)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='./icons/icon-192-v2.png';this.classList.add('logo-fallback')">` : `<img src="./icons/icon-192-v2.png" alt="" class="logo-fallback">`}</div>
       <div class="info">
         <div class="nom">${esc(p.nombre)}</div>
