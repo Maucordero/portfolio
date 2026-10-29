@@ -251,7 +251,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.12.3';
+const VERSION = '1.13.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1' };
@@ -688,6 +688,208 @@ function ventasLocales(){
 }
 function guardarVentasLocales(v){ guardarLS(LS.ventas, v.slice(0, 40)); }
 
+/* ---- Plan de una venta hecha en el teléfono (factura y cobros sin esperar la PC) ---- */
+function normalizarVentaLocal(v){
+  if(!v) return v;
+  if(v.abono == null && v.prima != null) v.abono = num(v.prima);
+  if(!v.cantidad) v.cantidad = 1;
+  if(!v.fecha_venta){
+    const d = new Date(v.ts || Date.now());
+    v.fecha_venta = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  if(!v.perfume_id){
+    const p = datos.inventario.find(x => norm(x.nombre) === norm(v.perfume));
+    if(p){ v.perfume_id = p.id; v.foto = v.foto || p.foto || ''; }
+  }
+  if(v.telefono == null) v.telefono = '';
+  if(v.referencia == null) v.referencia = '';
+  if(v.foto == null) v.foto = '';
+  return v;
+}
+
+function planLocal(v){
+  v = normalizarVentaLocal(v);
+  const total = Math.max(0, num(v && v.monto));
+  const tipo = String((v && v.tipo) || 'contado');
+  const planN = planDe(tipo);
+  const abono = Math.min(Math.max(0, num(v && v.abono)), total);
+  const fecha = String((v && v.fecha) || proximaCuotaISO()).slice(0, 10);
+  const prima = (v && v.prima_aviso && num(v.prima_aviso.monto) > 0 && planN >= 2)
+    ? { monto: Math.min(num(v.prima_aviso.monto), total), fecha: String(v.prima_aviso.fecha || fecha).slice(0, 10) }
+    : null;
+  let cuotas = [];
+  let abonado = abono;
+  let saldo = Math.max(total - abono, 0);
+
+  if(planN > 0){
+    if(prima){
+      const resto = Math.max(total - abono - prima.monto, 0);
+      const parte = resto / planN;
+      const fechas = cuotasProg(fecha, planN);
+      cuotas = [
+        { numero: 1, monto: prima.monto, vencimiento: prima.fecha, pagada: false, tipo: 'prima' },
+        ...fechas.map((f, i) => ({ numero: i + 2, monto: parte, vencimiento: f, pagada: false, tipo: 'abono' })),
+      ];
+    } else if(planN >= 2 && v.modo === 'primer_pago' && abono > 0){
+      const n = planN - 1;
+      const parte = n > 0 ? Math.max(total - abono, 0) / n : 0;
+      const fechas = cuotasProg(fecha, n);
+      cuotas = [
+        { numero: 1, monto: abono, vencimiento: String(v.fecha_venta || fecha).slice(0, 10), pagada: true, tipo: 'abono' },
+        ...fechas.map((f, i) => ({ numero: i + 2, monto: parte, vencimiento: f, pagada: false, tipo: 'abono' })),
+      ];
+    } else {
+      const resto = Math.max(total - abono, 0);
+      const parte = resto / planN;
+      const fechas = cuotasProg(fecha, planN);
+      cuotas = fechas.map((f, i) => ({ numero: i + 1, monto: parte, vencimiento: f, pagada: false, tipo: 'abono' }));
+    }
+  } else {
+    abonado = total;
+    saldo = 0;
+  }
+
+  const pend = cuotas.filter(c => !c.pagada && c.monto > 0.5);
+  const prox = pend[0] || null;
+  const atrasado = pend.some(c => c.vencimiento <= hoyISO()) ? 1 : 0;
+  return {
+    total, abonado, saldo, cuotas,
+    proximo: prox ? prox.vencimiento : '',
+    proximo_monto: prox ? Math.round(prox.monto) : 0,
+    pendientes: pend.length,
+    atrasado,
+    completo: true,
+  };
+}
+
+function cobroLocal(v){
+  const plan = planLocal(v);
+  const prod = datos.inventario.find(p => String(p.id) === String(v.perfume_id));
+  return {
+    venta_id: 'local-' + v.id,
+    cliente: v.cliente || '',
+    telefono: v.telefono || '',
+    producto: v.perfume || (prod && prod.nombre) || '',
+    producto_id: v.perfume_id || '',
+    foto: v.foto || (prod && prod.foto) || '',
+    cantidad: num(v.cantidad) || 1,
+    total: plan.total,
+    abonado: plan.abonado,
+    saldo: plan.saldo,
+    tipo_pago: v.tipo || 'contado',
+    proximo: plan.proximo,
+    proximo_monto: plan.proximo_monto,
+    atrasado: plan.atrasado,
+    pendientes: plan.pendientes,
+    fecha_venta: String(v.fecha_venta || '').slice(0, 10),
+    cuotas: JSON.stringify(plan.cuotas.map(c => ({ n: c.numero, f: c.vencimiento, m: Math.round(c.monto), p: c.pagada ? 1 : 0, t: c.tipo }))),
+    local: true,
+    estado_local: v.estado || 'pendiente',
+  };
+}
+
+function fechaCerca(a, b){
+  const da = String(a || '').slice(0, 10), db = String(b || '').slice(0, 10);
+  if(!da || !db) return true;
+  const ta = new Date(da + 'T12:00:00'), tb = new Date(db + 'T12:00:00');
+  if(isNaN(ta) || isNaN(tb)) return true;
+  return Math.abs(ta - tb) <= 86400000 + 1;
+}
+
+function mismaVentaCobro(a, b){
+  return norm(a.cliente) === norm(b.cliente) &&
+    norm(a.producto) === norm(b.producto) &&
+    Math.round(num(a.total)) === Math.round(num(b.total)) &&
+    num(a.cantidad || 1) === num(b.cantidad || 1) &&
+    fechaCerca(a.fecha_venta, b.fecha_venta);
+}
+
+function cobrosTodos(){
+  const base = Array.isArray(cobros) ? cobros : [];
+  const locales = ventasLocales()
+    .filter(v => v.estado !== 'confirmada')
+    .map(cobroLocal)
+    .filter(c => c && num(c.saldo) > 0.5 && !base.some(g => mismaVentaCobro(c, g)));
+  return [...locales, ...base];
+}
+
+function mismaVentaNum(a, b){
+  return norm(a.cliente) === norm(b.cliente) &&
+    norm(a.perfume) === norm(b.perfume) &&
+    Math.round(num(a.total)) === Math.round(num(b.total)) &&
+    num(a.cantidad || 1) === num(b.cantidad || 1) &&
+    fechaCerca(a.fecha || a.fecha_venta, b.fecha || b.fecha_venta);
+}
+
+function ventasLocalesPendientes(){
+  const base = (nums && Array.isArray(nums.ventas)) ? nums.ventas : [];
+  return ventasLocales()
+    .filter(v => v.estado !== 'confirmada')
+    .filter(v => !base.some(g => mismaVentaNum(ventaLocalANum(v), g)));
+}
+
+function ventaLocalANum(v){
+  const plan = planLocal(v);
+  const prod = datos.inventario.find(p => String(p.id) === String(v.perfume_id));
+  return {
+    id: 'local-' + v.id,
+    fecha: String(v.fecha_venta || '').slice(0, 10),
+    cliente: v.cliente || '',
+    telefono: v.telefono || '',
+    referencia: v.referencia || '',
+    perfume: v.perfume || (prod && prod.nombre) || '',
+    cantidad: num(v.cantidad) || 1,
+    total: plan.total,
+    cobrado: plan.abonado,
+    saldo: plan.saldo,
+    estado: plan.saldo <= 0.5 ? 'pagada' : (plan.abonado > 0 ? 'abonando' : 'sin_pagos'),
+    local: true,
+    pendiente: v.estado !== 'confirmada',
+    plan,
+  };
+}
+
+function resumenConLocales(){
+  const r = Object.assign({}, (nums && nums.resumen) || {});
+  for(const v of ventasLocalesPendientes()){
+    const plan = planLocal(v);
+    const prod = datos.inventario.find(p => String(p.id) === String(v.perfume_id));
+    const costo = costoDe({ id: v.perfume_id });
+    const costoUnit = costo ? num(costo.costo_crc) : 0;
+    const precio = prod ? num(prod.precio_crc) : 0;
+    const qty = num(v.cantidad) || 1;
+    r.total_vendido = num(r.total_vendido) + plan.total;
+    r.por_cobrar = num(r.por_cobrar) + plan.saldo;
+    r.n_ventas = num(r.n_ventas) + 1;
+    r.unidades_vendidas = num(r.unidades_vendidas) + qty;
+    if(costoUnit > 0){
+      r.ganancia_cobrada = num(r.ganancia_cobrada) + Math.max(0, Math.min(plan.total, plan.abonado) - (costoUnit * qty));
+      r.invertido_stock = num(r.invertido_stock) - (costoUnit * qty);
+    }
+    r.venta_stock = num(r.venta_stock) - (precio * qty);
+    r.unidades_stock = num(r.unidades_stock) - qty;
+  }
+  r.ganancia_potencial = num(r.venta_stock) - num(r.invertido_stock);
+  return r;
+}
+
+function categoriasConLocales(){
+  const cats = ((nums && nums.categorias) || []).map(c => Object.assign({}, c));
+  for(const v of ventasLocalesPendientes()){
+    const prod = datos.inventario.find(p => String(p.id) === String(v.perfume_id));
+    if(!prod) continue;
+    const nombre = String(prod.categoria || 'Sin categoría');
+    let row = cats.find(c => c.nombre === nombre);
+    if(!row){ row = { nombre, unidades: 0, costo: 0, venta: 0, ganancia: 0 }; cats.push(row); }
+    const qty = num(v.cantidad) || 1;
+    const costo = costoDe({ id: v.perfume_id });
+    row.unidades = num(row.unidades) - qty;
+    if(costo) row.costo = num(row.costo) - (num(costo.costo_crc) * qty);
+    row.venta = num(row.venta) - (num(prod.precio_crc) * qty);
+    row.ganancia = num(row.venta) - num(row.costo);  }
+  return cats;
+}
+
 // Fechas siguientes al estilo día 1 / 16, a partir de una fecha.
 function cuotasProg(primera, n){
   const fechas = [primera];
@@ -717,6 +919,32 @@ function mostrarConfirmacionVenta(txt){
   window._confVentaTimer = setTimeout(() => {
     const x = $('#v-confirmacion'); if(x) x.style.display = 'none';
   }, 60000);
+}
+
+// Venta recién anotada: factura y agradecimiento al instante, sin esperar la PC.
+function mostrarVentaAnotada(v){
+  const el = $('#v-confirmacion');
+  if(!el) return;
+  const plan = planLocal(v);
+  el.innerHTML = `<div>✅ Venta anotada · ${esc(v.cliente)} · ${esc(v.perfume)} · ${money(v.monto)}</div>
+    <div style="font-size:12px;margin-top:4px;color:var(--muted)">
+      ${plan.saldo > 0.5 ? 'Saldo ' + money(plan.saldo) + ' · ' : ''}Queda en Cobros como <b>pendiente</b> hasta que la PC la aplique.
+    </div>
+    <div class="acciones" style="margin-top:8px;justify-content:flex-end;gap:8px;flex-wrap:wrap">
+      ${plan.saldo > 0.5 ? '<button class="btn sm" id="cf-factura">📲 Factura</button>' : ''}
+      ${v.telefono ? '<button class="btn ghost sm" id="cf-gracias">🙏 Agradecimiento</button>' : ''}
+      <button class="btn ghost sm" id="cf-cerrar">Cerrar</button>
+    </div>`;
+  el.style.display = '';
+  clearTimeout(window._confVentaTimer);
+  window._confVentaTimer = setTimeout(() => {
+    const x = $('#v-confirmacion'); if(x) x.style.display = 'none';
+  }, 60000);
+  const bf = $('#cf-factura');
+  if(bf) bf.onclick = () => enviarFacturaLocal(v);
+  const bg = $('#cf-gracias');
+  if(bg) bg.onclick = () => enviarGraciasCel({ cliente: v.cliente, telefono: v.telefono, perfume: v.perfume, cantidad: v.cantidad });
+  $('#cf-cerrar').onclick = () => { el.style.display = 'none'; };
 }
 
 function pintarVender(app){
@@ -983,8 +1211,27 @@ function pintarVender(app){
       const j = await r.json();
       if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó la venta');
 
+      const vLocal = {
+        id: j.id,
+        ts: Date.now(),
+        cliente: cliente,
+        telefono: tel,
+        perfume: p.nombre,
+        perfume_id: p.id,
+        foto: p.foto || '',
+        cantidad: cant,
+        monto: total,
+        abono: abono,
+        tipo: tipo,
+        modo: modo,
+        fecha: fecha || '',
+        prima_aviso: primaAviso || null,
+        referencia: referencia || '',
+        fecha_venta: hoyISO(),
+        estado: 'pendiente'
+      };
       const lista = ventasLocales();
-      lista.unshift({ id: j.id, ts: Date.now(), cliente, perfume: p.nombre, monto: total, prima: abono, tipo, modo, estado: 'pendiente' });
+      lista.unshift(vLocal);
       guardarVentasLocales(lista);
 
       $('#v-cli').value = '';
@@ -999,7 +1246,7 @@ function pintarVender(app){
       $('#v-prima-fecha').value = '';
       $('#v-prima-datos').classList.add('oculto');
       actualizar();
-      mostrarConfirmacionVenta(`✅ Venta anotada · ${cliente} · ${p.nombre} · ${money(total)}`);
+      mostrarVentaAnotada(vLocal);
     } catch(e){
       toast(e.message || 'No se pudo anotar', 'error');
     } finally {
@@ -1067,7 +1314,10 @@ async function refrescarEstadoVentas(){
       const est = pend.has(String(v.id)) ? 'pendiente' : 'confirmada';
       if(v.estado !== est){ v.estado = est; cambio = true; }
     });
-    if(cambio){ guardarVentasLocales(lista); pintarVentasLocales(); }
+    if(cambio){
+      guardarVentasLocales(lista);
+      if(vista === 'cobros' || vista === 'numeros') render();
+    }
   } catch(e){ /* sin señal: se queda como estaba */ }
 }
 
@@ -1348,7 +1598,7 @@ async function cargarBitmap(url){
 function clienteDeCobro(c){
   const nombre = String((c && c.cliente) || '').trim();
   const tel = String((c && c.telefono) || '').replace(/\D/g,'');
-  let ventas = cobros.filter(x => nombre
+  let ventas = cobrosTodos().filter(x => nombre
     ? norm(x.cliente) === norm(nombre)
     : (tel && String(x.telefono || '').replace(/\D/g,'') === tel));
   if(!ventas.length) ventas = [c];
@@ -1541,6 +1791,12 @@ async function enviarImagenCobro(c){
   if(tel) setTimeout(() => abrirWhatsApp('', tel), 700);
 }
 
+async function enviarFacturaLocal(v){
+  const c = cobroLocal(v);
+  if(!c || num(c.saldo) <= 0.5) return toast('Esa venta no tiene saldo pendiente', 'error');
+  await enviarImagenCobro(c);
+}
+
 function abrirProducto(p){
   const st = num(p.stock);
   const costo = costoDe(p);
@@ -1596,6 +1852,7 @@ async function cargarCostos(mostrar){
     costosError = '';
     guardarLS(LS.costos, costos);
     if(vista === 'stock') pintarLista();
+    else if(vista === 'numeros') render();
   } catch(e) {
     costosError = /desconocida/i.test(e.message)
       ? 'Falta actualizar el script de Google (versión 1.5.2).'
@@ -1674,7 +1931,8 @@ function pintarCobros(app){
     return;
   }
 
-  if(!cobros.length){
+  const todos = cobrosTodos();
+  if(!todos.length){
     if(cobrosError){
       app.innerHTML = `<div class="card">
         <h3>Clientes que deben</h3>
@@ -1691,8 +1949,8 @@ function pintarCobros(app){
     return;
   }
 
-  const total = cobros.reduce((s,c) => s + num(c.saldo), 0);
-  const atras = cobros.filter(c => num(c.atrasado) === 1).length;
+  const total = todos.reduce((s,c) => s + num(c.saldo), 0);
+  const atras = todos.filter(c => num(c.atrasado) === 1).length;
 
   app.innerHTML = `
     <div class="card" style="display:flex;gap:10px;align-items:center">
@@ -1701,8 +1959,8 @@ function pintarCobros(app){
         <div style="font-size:23px;font-weight:700;color:var(--gold2);line-height:1.2">${money(total)}</div>
       </div>
       <div style="text-align:right">
-        <small class="muted" style="font-size:11px;letter-spacing:.08em">CLIENTES</small>
-        <div style="font-size:23px;font-weight:700;line-height:1.2">${cobros.length}</div>
+        <small class="muted" style="font-size:11px;letter-spacing:.08em">COBROS</small>
+        <div style="font-size:23px;font-weight:700;line-height:1.2">${todos.length}</div>
       </div>
     </div>
     ${atras ? `<div class="aviso">⚠️ ${atras} con abono vencido. Tocalo para mandarle el recordatorio.</div>` : ''}
@@ -1713,7 +1971,7 @@ function pintarCobros(app){
 
   const pintar = () => {
     const q = norm($('#cb-q').value);
-    const lista = cobros.filter(c =>
+    const lista = todos.filter(c =>
       !q || norm(c.cliente).includes(q) || norm(c.producto).includes(q));
     const cont = $('#cb-lista');
     if(!lista.length){
@@ -1722,6 +1980,7 @@ function pintarCobros(app){
     }
     cont.innerHTML = lista.map(c => {
       const atrasado = num(c.atrasado) === 1;
+      const esLocal = String(c.venta_id).startsWith('local-');
       const fecha = c.proximo ? String(c.proximo).slice(0,10).split('-').reverse().join('/') : '';
       const cant = num(c.cantidad) > 1 ? ' · ' + num(c.cantidad) + ' u.' : '';
       return `<div class="prod" data-cobro="${esc(c.venta_id)}">
@@ -1733,12 +1992,13 @@ function pintarCobros(app){
             <span class="precio">${money(c.saldo)}</span>
             <span class="pagos">${fecha ? (atrasado ? 'venció ' : 'vence ') + fecha : ''}</span>
           </div>
-          <div class="fila" style="margin-top:4px">
+          <div class="fila" style="margin-top:4px;gap:6px;flex-wrap:wrap">
             <span class="tag">Abonado ${money(c.abonado)} de ${money(c.total)}</span>
+            ${esLocal ? '<span class="tag" style="color:var(--gold2)">⏳ esperando PC</span>' : ''}
           </div>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;align-items:center;align-self:center">
-          ${abonosOn() ? `<span data-abonar="${esc(c.venta_id)}" style="font-size:20px;color:var(--gold2);cursor:pointer" title="Registrar abono">💵</span>` : ''}
+          ${abonosOn() && !esLocal ? `<span data-abonar="${esc(c.venta_id)}" style="font-size:20px;color:var(--gold2);cursor:pointer" title="Registrar abono">💵</span>` : ''}
           <span style="font-size:19px;color:var(--green);cursor:pointer" title="Mandar recordatorio">📲</span>
         </div>
       </div>`;
@@ -1747,13 +2007,13 @@ function pintarCobros(app){
     cont.querySelectorAll('[data-abonar]').forEach(el => {
       el.addEventListener('click', ev => {
         ev.stopPropagation();
-        const c = cobros.find(x => String(x.venta_id) === String(el.dataset.abonar));
+        const c = lista.find(x => String(x.venta_id) === String(el.dataset.abonar));
         if(c) abrirAbono(c);
       });
     });
     cont.querySelectorAll('[data-cobro]').forEach(el => {
       el.addEventListener('click', () => {
-        const c = cobros.find(x => String(x.venta_id) === String(el.dataset.cobro));
+        const c = lista.find(x => String(x.venta_id) === String(el.dataset.cobro));
         if(c) enviarImagenCobro(c);
       });
     });
@@ -1944,12 +2204,13 @@ function pintarNumeros(app){
     return;
   }
 
-  const r = nums.resumen || {};
-  const ventas = Array.isArray(nums.ventas) ? nums.ventas : [];
+  const r = resumenConLocales();
+  const locales = ventasLocalesPendientes().map(ventaLocalANum);
+  const ventas = [...locales, ...(Array.isArray(nums.ventas) ? nums.ventas : [])];
   const pagadas = ventas.filter(v => num(v.saldo) <= 0.5);
   const deben = ventas.filter(v => num(v.saldo) > 0.5);
   const lista = (numsFiltro === 'pagadas' ? pagadas : numsFiltro === 'deben' ? deben : ventas);
-  const cats = Array.isArray(nums.categorias) ? nums.categorias : [];
+  const cats = categoriasConLocales();
   const fecha = f => String(f || '').slice(0,10).split('-').reverse().join('/');
   const estado = v => num(v.saldo) <= 0.5
     ? '<span class="tag" style="color:var(--green);border-color:rgba(62,207,142,.35)">Pagada</span>'
@@ -1973,7 +2234,7 @@ function pintarNumeros(app){
         ${cajaNum('Perfumes vendidos', num(r.unidades_vendidas))}
         ${cajaNum('Unidades en stock', num(r.unidades_stock))}
       </div>
-      <div class="hint" style="margin-top:10px">Actualizado ${nums.actualizado ? hace(new Date(nums.actualizado).getTime()) : '—'}</div>
+      <div class="hint" style="margin-top:10px">Actualizado ${nums.actualizado ? hace(new Date(nums.actualizado).getTime()) : '—'}${locales.length ? ` · ${locales.length} venta${locales.length === 1 ? '' : 's'} del teléfono esperando la PC` : ''}</div>
     </div>
 
     <div class="card">
@@ -2002,11 +2263,16 @@ function pintarNumeros(app){
           </div>
           <div class="fila" style="margin-top:4px;gap:6px;flex-wrap:wrap">
             ${estado(v)}
+            ${v.pendiente ? '<span class="tag" style="color:var(--gold2)">⏳ esperando PC</span>' : ''}
             <span class="tag">Cobrado ${money(v.cobrado)}</span>
             ${num(v.saldo) > 0.5 ? `<span class="tag" style="color:var(--red)">Saldo ${money(v.saldo)}</span>` : ''}
           </div>
+          ${v.local && v.pendiente ? `<div class="fila" style="margin-top:6px;gap:6px;flex-wrap:wrap">
+            ${num(v.saldo) > 0.5 ? `<button class="btn ghost sm" data-factura-local="${esc(v.id)}">📲 Factura</button>` : ''}
+            <button class="btn ghost sm" data-gracias-local="${esc(v.id)}">🙏 Agradecimiento</button>
+          </div>` : ''}
         </div>
-        ${num(v.saldo) <= 0.5 && String(v.telefono || '').replace(/\D/g,'').length >= 8
+        ${!v.local && num(v.saldo) <= 0.5 && String(v.telefono || '').replace(/\D/g,'').length >= 8
           ? `<button class="btn ghost sm" data-gracias="${esc(v.id)}" title="Enviar agradecimiento por WhatsApp" style="align-self:center;font-size:18px;padding:8px 10px;margin-left:2px">🙏</button>`
           : ''}
       </div>`).join('') : `<div class="vacio"><span class="em">📊</span>No hay ventas en este grupo.</div>`}
@@ -2021,6 +2287,20 @@ function pintarNumeros(app){
       ev.stopPropagation();
       const v = ventas.find(x => String(x.id) === String(b.dataset.gracias));
       if(v) await enviarGraciasCel(v);
+    };
+  });
+  app.querySelectorAll('[data-factura-local]').forEach(b => {
+    b.onclick = async (ev) => {
+      ev.stopPropagation();
+      const v = ventasLocales().find(x => ('local-' + x.id) === b.dataset.facturaLocal);
+      if(v) await enviarFacturaLocal(v);
+    };
+  });
+  app.querySelectorAll('[data-gracias-local]').forEach(b => {
+    b.onclick = async (ev) => {
+      ev.stopPropagation();
+      const v = ventasLocales().find(x => ('local-' + x.id) === b.dataset.graciasLocal);
+      if(v) await enviarGraciasCel({ cliente: v.cliente, telefono: v.telefono, perfume: v.perfume, cantidad: v.cantidad });
     };
   });
 }
@@ -2498,15 +2778,19 @@ document.querySelectorAll('nav button').forEach(b => {
     vista = b.dataset.v;
     try { history.replaceState(null, '', '#' + vista); } catch(e){}
     render();
-    if(vista === 'cobros') cargarCobros(false);
-    if(vista === 'numeros') cargarNumeros(false);
+    if(vista === 'cobros'){ refrescarEstadoVentas(); cargarCobros(false); }
+    if(vista === 'numeros'){ refrescarEstadoVentas(); cargarNumeros(false); }
     window.scrollTo(0,0);
   });
 });
 $('#btn-sync').addEventListener('click', () => {
   sincronizar(false);
-  if(token()) cargarCostos(false);
-  if(vista === 'numeros') cargarNumeros(false);
+  if(token()){
+    refrescarEstadoVentas();
+    cargarCostos(false);
+    if(vista === 'cobros') cargarCobros(false);
+    if(vista === 'numeros') cargarNumeros(false);
+  }
 });
 
 window.addEventListener('online', () => { pintarEstado(); });
@@ -2516,8 +2800,8 @@ window.addEventListener('hashchange', () => {
   if(['stock','vender','cobros','numeros','catalogo','ajustes'].includes(h) && h !== vista){
     vista = h;
     render();
-    if(h === 'cobros') cargarCobros(false);
-    if(h === 'numeros') cargarNumeros(false);
+    if(h === 'cobros'){ refrescarEstadoVentas(); cargarCobros(false); }
+    if(h === 'numeros'){ refrescarEstadoVentas(); cargarNumeros(false); }
     window.scrollTo(0,0);
   }
 });
@@ -2570,6 +2854,7 @@ document.addEventListener('click', ev => {
   pintarEstado(!navigator.onLine);
 
   sincronizar(true).then(() => {
+    if(token()) refrescarEstadoVentas();
     if(token()) cargarCobros(false);
     if(token()) cargarCostos(false);
     if(token() && vista === 'numeros') cargarNumeros(false);
