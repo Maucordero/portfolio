@@ -251,14 +251,15 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.12.1';
+const VERSION = '1.12.2';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
-const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', numeros:'kq_numeros_v1' };
+const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1' };
 
 let datos = { inventario:[], config:{}, guardado:null };
 let cobros = [];
 let nums = null, numsError = '', numsFiltro = 'todas', cargandoNums = false;
+let costos = null, costosError = '', cargandoCostos = false;
 let vista = 'stock';
 let filtro = { q:'', cat:'Todos', soloStock:false };
 let notas = [];
@@ -273,6 +274,10 @@ const num = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 function money(n){
   const v = Math.round(num(n));
   return '₡' + v.toLocaleString('de-DE');
+}
+function usd(n){
+  const v = num(n);
+  return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function norm(s){
   return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
@@ -298,6 +303,29 @@ function primaDe(p){
   // Compatibilidad con catálogos viejos que todavía traen el porcentaje.
   const pct = num((datos.config || {}).prima_sugerida);
   return pct > 0 ? mil(num(p.precio_crc) * pct / 100) : 0;
+}
+
+// Costos de compra (privados: solo llegan con la clave).
+let _costosCache = { raw: null, mapa: {} };
+function costosMapa(){
+  const raw = costos && costos.costos;
+  if(raw !== _costosCache.raw){
+    const mapa = {};
+    (raw || []).forEach(c => { mapa[String(c.id)] = c; });
+    _costosCache = { raw: raw, mapa: mapa };
+  }
+  return _costosCache.mapa;
+}
+function costoDe(p){
+  if(!token()) return null;
+  return (p && costosMapa()[String(p.id)]) || null;
+}
+function margenDe(p, costo){
+  const precio = num(p && p.precio_crc);
+  const costoCrc = num(costo && costo.costo_crc);
+  const ganancia = precio - costoCrc;
+  const margen = precio > 0 ? (ganancia / precio) * 100 : 0;
+  return { ganancia: ganancia, margen: margen };
 }
 
 // Sin token = visitante: solo catálogo y precios.
@@ -425,6 +453,7 @@ function abrirAcceso(){
     aplicarRol();
     render();
     await cargarCobros(false);
+    await cargarCostos(false);
     toast('Acceso activado');
   };
   setTimeout(() => { const i = w.querySelector('#ac-clave'); if(i) i.focus(); }, 80);
@@ -597,6 +626,8 @@ function pintarLista(){
     const st = num(p.stock);
     const foto = fotoUrl(p);
     const prima = primaDe(p);
+    const costo = costoDe(p);
+    const mg = costo ? margenDe(p, costo) : null;
     return `<div class="prod prod-foto" data-id="${esc(p.id)}">
       <div class="foto">${foto ? `<img src="${esc(foto)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='./icons/icon-192-v2.png';this.classList.add('logo-fallback')">` : `<img src="./icons/icon-192-v2.png" alt="" class="logo-fallback">`}</div>
       <div class="info">
@@ -607,6 +638,10 @@ function pintarLista(){
           <span class="pagos">2 pagos ${money(p.precio_pagos_crc)}</span>
         </div>
         ${prima ? `<div class="fila" style="margin-top:3px"><span class="abono">Prima: ${money(prima)}</span></div>` : ''}
+        ${costo ? `<div class="fila" style="margin-top:3px">
+          <span style="font-size:12px;color:var(--blue)">💵 Costo ${usd(costo.costo_usd)} · ${money(costo.costo_crc)}</span>
+          <span style="font-size:12px;color:${mg.ganancia >= 0 ? 'var(--green)' : 'var(--red)'}">Margen ${mg.margen.toFixed(1)}%</span>
+        </div>` : ''}
         <div class="fila" style="margin-top:6px">
           <span class="stock ${st<=0?'cero':''}">${st>0 ? st + ' en stock' : 'Agotado'}</span>
           <span class="tag">${esc(p.categoria||'—')}</span>
@@ -1508,6 +1543,8 @@ async function enviarImagenCobro(c){
 
 function abrirProducto(p){
   const st = num(p.stock);
+  const costo = costoDe(p);
+  const mg = costo ? margenDe(p, costo) : null;
   const wrap = $('#hoja-wrap');
   wrap.innerHTML = `<div class="hoja-fondo">
     <div class="hoja">
@@ -1525,6 +1562,10 @@ function abrirProducto(p){
         <div class="p"><small>A 2 pagos</small><b>${money(p.precio_pagos_crc)}</b></div>
       </div>
       ${primaDe(p) ? `<div class="abono" style="margin:-4px 0 10px">💰 Prima: <b>${money(primaDe(p))}</b></div>` : ''}
+      ${costo ? `<div class="fila" style="margin:2px 0 10px;justify-content:center;gap:8px;flex-wrap:wrap">
+        <span class="tag" style="color:var(--blue);border-color:rgba(90,169,255,.35)">💵 Costo ${usd(costo.costo_usd)} · ${money(costo.costo_crc)}</span>
+        <span class="tag" style="color:${mg.ganancia >= 0 ? 'var(--green)' : 'var(--red)'}">Ganancia ${money(mg.ganancia)} · ${mg.margen.toFixed(1)}%</span>
+      </div>` : ''}
       ${p.descripcion ? `<div class="cuerpo">${esc(p.descripcion)}</div>` : ''}
       <div class="acciones">
         <button class="btn verde" id="h-wa">📲 Enviar imagen por WhatsApp</button>
@@ -1539,6 +1580,30 @@ function abrirProducto(p){
   $('.hoja-fondo').addEventListener('click', e => { if(e.target.classList.contains('hoja-fondo')) cerrar(); });
   $('#h-copiar').onclick = () => copiar(textoInfo(p), 'Texto copiado');
   $('#h-wa').onclick = () => enviarImagenWhatsApp(p);
+}
+
+/* ---------------- costos de compra (privado, con clave) ---------------- */
+async function cargarCostos(mostrar){
+  const t = token();
+  if(!t) return;
+  if(cargandoCostos) return;
+  cargandoCostos = true;
+  try {
+    const r = await fetch(API + '?action=costos&token=' + encodeURIComponent(t) + '&t=' + Date.now());
+    const j = await r.json();
+    if(!j || !j.ok) throw new Error((j && j.error) || 'No se pudo leer los costos');
+    costos = { costos: Array.isArray(j.costos) ? j.costos : [], guardado: Date.now() };
+    costosError = '';
+    guardarLS(LS.costos, costos);
+    if(vista === 'stock') pintarLista();
+  } catch(e) {
+    costosError = /desconocida/i.test(e.message)
+      ? 'Falta actualizar el script de Google (versión 1.5.2).'
+      : (e.message || 'Sin señal');
+    if(mostrar) toast(costosError, 'error');
+  } finally {
+    cargandoCostos = false;
+  }
 }
 
 /* ---------------- cobros (clientes que deben) ---------------- */
@@ -2374,7 +2439,7 @@ function pintarAjustes(app){
     aplicarRol();
     toast(t ? 'Clave guardada' : 'Clave borrada');
     render();
-    if(t) cargarCobros(false);
+    if(t){ cargarCobros(false); cargarCostos(false); }
   };
 
   $('#a-probar').onclick = async () => {
@@ -2409,11 +2474,13 @@ function pintarAjustes(app){
       localStorage.removeItem(LS.notas);
       localStorage.removeItem(LS.cobros);
       localStorage.removeItem(LS.numeros);
+      localStorage.removeItem(LS.costos);
     } catch(e){}
     datos = { inventario:[], config:{}, guardado:null };
     notas = [];
     cobros = [];
     nums = null;
+    costos = null;
     toast('Datos borrados');
     sincronizar(false);
     render();
@@ -2433,6 +2500,7 @@ document.querySelectorAll('nav button').forEach(b => {
 });
 $('#btn-sync').addEventListener('click', () => {
   sincronizar(false);
+  if(token()) cargarCostos(false);
   if(vista === 'numeros') cargarNumeros(false);
 });
 
@@ -2474,6 +2542,9 @@ document.addEventListener('click', ev => {
   const gn = leerLS(LS.numeros, null);
   if(gn && gn.nums) nums = gn.nums;
 
+  const gco = leerLS(LS.costos, null);
+  if(gco && Array.isArray(gco.costos)) costos = gco;
+
   // Permite cargar la clave una sola vez desde un enlace:  ...?clave=XXXX
   try {
     const params = new URLSearchParams(location.search);
@@ -2495,6 +2566,7 @@ document.addEventListener('click', ev => {
 
   sincronizar(true).then(() => {
     if(token()) cargarCobros(false);
+    if(token()) cargarCostos(false);
     if(token() && vista === 'numeros') cargarNumeros(false);
   });
 
