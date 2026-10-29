@@ -246,7 +246,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.11.4';
+const VERSION = '1.11.5';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', numeros:'kq_numeros_v1' };
@@ -1467,12 +1467,11 @@ async function imagenCobro(cli){
 
   // Datos para pagar
   if(pago){
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#8a8f99'; ctx.font = 'bold 22px ' + FUENTE;
-    ctx.fillText('Datos para pagar (SINPE):', M, y); y += 30;
-    ctx.fillStyle = '#333a45'; ctx.font = '22px ' + FUENTE;
-    for(const ln of pago.split('\n')){ ctx.fillText(ln, M, y); y += 28; }
     ctx.textAlign = 'center';
+    ctx.fillStyle = '#c9a24b'; ctx.font = 'bold 22px ' + FUENTE;
+    ctx.fillText('Datos para pagar (SINPE):', cx, y); y += 30;
+    ctx.fillStyle = '#333a45'; ctx.font = '22px ' + FUENTE;
+    for(const ln of pago.split('\n')){ ctx.fillText(ln, cx, y); y += 28; }
     y += 10;
   }
 
