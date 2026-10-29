@@ -251,7 +251,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.12.2';
+const VERSION = '1.12.3';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1' };
@@ -2436,6 +2436,11 @@ function pintarAjustes(app){
   $('#a-guardar').onclick = () => {
     const t = $('#a-token').value.trim();
     guardarToken(t);
+    if(!t){
+      // Al borrar la clave, no dejamos costos privados guardados en el teléfono.
+      try { localStorage.removeItem(LS.costos); } catch(e){}
+      costos = null;
+    }
     aplicarRol();
     toast(t ? 'Clave guardada' : 'Clave borrada');
     render();
