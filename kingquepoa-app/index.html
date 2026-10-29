@@ -251,7 +251,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.13.0';
+const VERSION = '1.13.1';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1' };
@@ -515,7 +515,7 @@ function textoInfo(p){
 
 function textoCatalogo(){
   const cfg = datos.config || {};
-  const con = datos.inventario.filter(p => num(p.stock) > 0);
+  const con = datos.inventario.filter(p => stockLocalDe(p) > 0);
   const grupos = [['Hombre','👨 HOMBRE'],['Mujer','👩 MUJER'],['Unisex','⚥ UNISEX'],['','SIN CATEGORÍA']];
   let t = '🧴 CATÁLOGO DE PERFUMES\n✅ Disponibilidad inmediata\n';
   for(const [cat, titulo] of grupos){
@@ -604,7 +604,7 @@ function listaFiltrada(){
   const q = norm(filtro.q);
   return datos.inventario.filter(p => {
     if(filtro.cat !== 'Todos' && String(p.categoria||'') !== filtro.cat) return false;
-    if(filtro.soloStock && num(p.stock) <= 0) return false;
+    if(filtro.soloStock && stockLocalDe(p) <= 0) return false;
     if(!q) return true;
     return norm(p.nombre).includes(q) || norm(p.marca).includes(q) || norm(p.familia).includes(q);
   });
@@ -623,7 +623,7 @@ function pintarLista(){
     return;
   }
   cont.innerHTML = lista.map(p => {
-    const st = num(p.stock);
+    const st = stockLocalDe(p);
     const foto = fotoUrl(p);
     const prima = primaDe(p);
     const costo = costoDe(p);
@@ -687,6 +687,19 @@ function ventasLocales(){
   return Array.isArray(v) ? v : [];
 }
 function guardarVentasLocales(v){ guardarLS(LS.ventas, v.slice(0, 40)); }
+
+// Stock que ve el dueño en el teléfono: descuenta las ventas locales todavía pendientes de la PC.
+function stockLocalDe(p){
+  if(!p) return 0;
+  let n = Number(p.stock) || 0;
+  for(const v of ventasLocales()){
+    if(v.estado === 'confirmada') continue;
+    const mismo = (v.perfume_id != null && String(v.perfume_id) === String(p.id)) ||
+      (v.perfume_id == null && norm(v.perfume) === norm(p.nombre));
+    if(mismo) n -= (num(v.cantidad) || 1);
+  }
+  return Math.max(0, n);
+}
 
 /* ---- Plan de una venta hecha en el teléfono (factura y cobros sin esperar la PC) ---- */
 function normalizarVentaLocal(v){
@@ -1053,7 +1066,7 @@ function pintarVender(app){
         const an = norm(a.nombre), bn = norm(b.nombre);
         const ap = an.startsWith(q) ? 0 : 1, bp = bn.startsWith(q) ? 0 : 1;
         if(ap !== bp) return ap - bp;
-        const as = num(a.stock) > 0 ? 0 : 1, bs = num(b.stock) > 0 ? 0 : 1;
+        const as = stockLocalDe(a) > 0 ? 0 : 1, bs = stockLocalDe(b) > 0 ? 0 : 1;
         if(as !== bs) return as - bs;
         return an.localeCompare(bn);
       })
@@ -1064,7 +1077,7 @@ function pintarVender(app){
       return;
     }
     box.innerHTML = lista.map(p => {
-      const st = num(p.stock);
+      const st = stockLocalDe(p);
       return `<div class="sug" data-pid="${esc(p.id)}">
         <div style="min-width:0">
           <div class="nom">${esc(p.nombre)}</div>
@@ -1122,7 +1135,7 @@ function pintarVender(app){
     const esPrimer = esPlan && puedePrimer && modo === 'primer_pago' && monto > 0;
     const nCuotas = !esPlan ? 0 : (esPrimer ? planN - 1 : planN);
     const cuota = nCuotas > 0 ? Math.round(resto / nCuotas) : 0;
-    const st = num(p.stock);
+    const st = stockLocalDe(p);
 
     const partes = [`<b>Total: ${money(total)}</b>`];
     if(primaAviso && planN >= 2){
@@ -1172,8 +1185,8 @@ function pintarVender(app){
     const p = $p();
     if(!p) return toast('Elegí un perfume de la lista', 'error');
     const cant = $cant();
-    if(num(p.stock) <= 0) return toast(`Sin existencia: ${p.nombre}`, 'error');
-    if(cant > num(p.stock)) return toast(`Solo hay ${num(p.stock)} en stock`, 'error');
+    if(stockLocalDe(p) <= 0) return toast(`Sin existencia: ${p.nombre}`, 'error');
+    if(cant > stockLocalDe(p)) return toast(`Solo hay ${stockLocalDe(p)} en stock`, 'error');
     const cliente = $('#v-cli').value.trim();
     const tel = $('#v-tel').value.trim();
     if(!cliente) return toast('Falta el nombre del cliente', 'error');
@@ -1317,6 +1330,7 @@ async function refrescarEstadoVentas(){
     if(cambio){
       guardarVentasLocales(lista);
       if(vista === 'cobros' || vista === 'numeros') render();
+      else if(vista === 'stock') pintarLista();
     }
   } catch(e){ /* sin señal: se queda como estaba */ }
 }
@@ -1798,7 +1812,7 @@ async function enviarFacturaLocal(v){
 }
 
 function abrirProducto(p){
-  const st = num(p.stock);
+  const st = stockLocalDe(p);
   const costo = costoDe(p);
   const mg = costo ? margenDe(p, costo) : null;
   const wrap = $('#hoja-wrap');
@@ -2778,6 +2792,7 @@ document.querySelectorAll('nav button').forEach(b => {
     vista = b.dataset.v;
     try { history.replaceState(null, '', '#' + vista); } catch(e){}
     render();
+    if(vista === 'stock' && token()) refrescarEstadoVentas();
     if(vista === 'cobros'){ refrescarEstadoVentas(); cargarCobros(false); }
     if(vista === 'numeros'){ refrescarEstadoVentas(); cargarNumeros(false); }
     window.scrollTo(0,0);
@@ -2800,6 +2815,7 @@ window.addEventListener('hashchange', () => {
   if(['stock','vender','cobros','numeros','catalogo','ajustes'].includes(h) && h !== vista){
     vista = h;
     render();
+    if(h === 'stock' && token()) refrescarEstadoVentas();
     if(h === 'cobros'){ refrescarEstadoVentas(); cargarCobros(false); }
     if(h === 'numeros'){ refrescarEstadoVentas(); cargarNumeros(false); }
     window.scrollTo(0,0);
