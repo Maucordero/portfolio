@@ -246,7 +246,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.11.1';
+const VERSION = '1.11.2';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', numeros:'kq_numeros_v1' };
@@ -1321,6 +1321,7 @@ function clienteDeCobro(c){
 async function imagenCobro(cli){
   const cfg = datos.config || {};
   const pago = String(cfg.datos_pago || '').trim();
+  const hoyStr = hoyISO();
   const pend = (cli.ventas || []).filter(v => num(v.saldo) > 0.5);
   let prox = null, proxV = null, proxIdx = -1;
   for(const v of pend){
@@ -1402,7 +1403,15 @@ async function imagenCobro(cli){
     ctx.strokeStyle = '#ecd9a8'; ctx.lineWidth = 3; ctx.strokeRect(M, y, boxW, boxH);
     ctx.textAlign = 'center';
     ctx.fillStyle = '#8a6b1e'; ctx.font = 'bold 24px ' + FUENTE;
-    ctx.fillText(cuota && cuota.tipo === 'prima' ? 'TU PRIMA' : (tienePrima ? 'TU ABONO' : 'TU PAGO'), bx, y + 20);
+    // "TU PRÓXIMO PAGO" si todavía no vence; "TU PAGO DE HOY" si vence hoy; "VENCIDO" si ya pasó.
+    const baseCaja = cuota && cuota.tipo === 'prima' ? 'PRIMA' : (tienePrima ? 'ABONO' : 'PAGO');
+    let etiquetaCaja = 'TU ' + baseCaja;
+    if(cuota && cuota.vencimiento){
+      if(cuota.vencimiento === hoyStr) etiquetaCaja = 'TU ' + baseCaja + ' DE HOY';
+      else if(cuota.vencimiento > hoyStr) etiquetaCaja = (baseCaja === 'PRIMA' ? 'TU PRIMA' : 'TU PRÓXIMO ' + baseCaja);
+      else etiquetaCaja = 'TU ' + baseCaja + ' VENCIDO';
+    }
+    ctx.fillText(etiquetaCaja, bx, y + 20);
     if(cuota){
       ctx.fillStyle = '#171a21'; ctx.font = 'bold 34px ' + FUENTE;
       ctx.fillText(fmtFechaLarga(cuota.vencimiento), bx, y + 56);
