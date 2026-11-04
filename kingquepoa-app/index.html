@@ -723,9 +723,14 @@ function stockLocalDe(p){
   let n = Number(p.stock) || 0;
   for(const v of ventasLocales()){
     if(v.estado === 'confirmada') continue;
-    const mismo = (v.perfume_id != null && String(v.perfume_id) === String(p.id)) ||
-      (v.perfume_id == null && norm(v.perfume) === norm(p.nombre));
-    if(mismo) n -= (num(v.cantidad) || 1);
+    const items = Array.isArray(v.items) && v.items.length
+      ? v.items
+      : [{ producto_id: v.perfume_id, nombre: v.perfume, cantidad: v.cantidad }];
+    for(const it of items){
+      const mismo = (it.producto_id != null && String(it.producto_id) === String(p.id)) ||
+        (it.producto_id == null && norm(it.nombre || v.perfume) === norm(p.nombre));
+      if(mismo) n -= (num(it.cantidad) || 1);
+    }
   }
   return Math.max(0, n);
 }
@@ -869,8 +874,14 @@ function datosFacturaCel(v){
 }
 
 function porPerfumesCel(v){
-  const nombre = String((v && (v.perfume || v.producto || v.perfume_nombre)) || '').trim();
-  return nombre ? `por el perfume *${nombre}*` : '';
+  const items = (v && Array.isArray(v.items) && v.items.length)
+    ? v.items
+    : [{ nombre: v && (v.perfume || v.producto || v.perfume_nombre) }];
+  const nombres = items.map(i => String((i && i.nombre) || '').trim()).filter(Boolean).map(n => `*${n}*`);
+  if(!nombres.length) return '';
+  if(nombres.length === 1) return `por el perfume ${nombres[0]}`;
+  if(nombres.length === 2) return `por los perfumes ${nombres[0]} y ${nombres[1]}`;
+  return `por los perfumes ${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}`;
 }
 
 function detallePagosCel(filas, n){
@@ -941,11 +952,18 @@ function precioContadoCel(v){
 
 async function facturaCelDocumento(v, tipo){
   const info = datosFacturaCel(v);
-  const item = {
-    nombre: v.perfume || v.producto || 'Perfume',
-    cantidad: Math.max(1, num(v.cantidad) || 1),
-    precio_unitario_crc: precioContadoCel(v),
-  };
+  const crudos = (v.items && v.items.length)
+    ? v.items
+    : [{ producto_id: v.perfume_id || v.producto_id, nombre: v.perfume || v.producto || 'Perfume', cantidad: v.cantidad, precio_unitario_crc: precioContadoCel(v) }];
+  const items = crudos.map(it => {
+    const p = productoDeVentaCel({ producto_id: it.producto_id, perfume_id: it.producto_id, nombre: it.nombre });
+    const precio = num(it.precio_unitario_crc || it.precio_crc) || (p ? num(p.precio_crc) : 0) || precioContadoCel({ perfume_id: it.producto_id, perfume: it.nombre });
+    return {
+      nombre: it.nombre || (p && p.nombre) || 'Perfume',
+      cantidad: Math.max(1, num(it.cantidad) || 1),
+      precio_unitario_crc: Math.round(precio),
+    };
+  });
   const proforma = tipo === 'proforma';
   const numBase = (v.venta_id && !String(v.venta_id).startsWith('local-')) ? v.venta_id : v.id;
   const opts = {
@@ -970,7 +988,7 @@ async function facturaCelDocumento(v, tipo){
   const png = await facturaPagoUnicoCel({
     cliente: v.cliente || v.nombre || '',
     tel: v.telefono || v.cliente_tel || '',
-    items: [item],
+    items,
     total: info.total,
     fecha: tipo === 'recordatorio' ? hoyISO() : (v.fecha_venta || hoyISO()),
     saldo: info.saldo,
@@ -997,15 +1015,19 @@ function seleccionCobroCel(c){
 
 function cobroLocal(v){
   const plan = planLocal(v);
-  const prod = datos.inventario.find(p => String(p.id) === String(v.perfume_id));
+  const items = Array.isArray(v.items) && v.items.length
+    ? v.items
+    : [{ producto_id: v.perfume_id, nombre: v.perfume, cantidad: v.cantidad, foto: v.foto }];
+  const first = items[0] || {};
+  const prod = datos.inventario.find(p => String(p.id) === String(first.producto_id));
   return {
     venta_id: 'local-' + v.id,
     cliente: v.cliente || '',
     telefono: v.telefono || '',
-    producto: v.perfume || (prod && prod.nombre) || '',
-    producto_id: v.perfume_id || '',
-    foto: v.foto || (prod && prod.foto) || '',
-    cantidad: num(v.cantidad) || 1,
+    producto: items.map(i => i.nombre).filter(Boolean).join(' + ') || (prod && prod.nombre) || '',
+    producto_id: first.producto_id || '',
+    foto: first.foto || (prod && prod.foto) || '',
+    cantidad: items.reduce((s, i) => s + (num(i.cantidad) || 1), 0),
     total: plan.total,
     abonado: plan.abonado,
     saldo: plan.saldo,
@@ -1016,6 +1038,7 @@ function cobroLocal(v){
     pendientes: plan.pendientes,
     fecha_venta: String(v.fecha_venta || '').slice(0, 10),
     cuotas: JSON.stringify(plan.cuotas.map(c => ({ n: c.numero, f: c.vencimiento, m: Math.round(c.monto), p: c.pagada ? 1 : 0, t: c.tipo }))),
+    items: items.map(i => ({ producto_id: i.producto_id, nombre: i.nombre, cantidad: i.cantidad, precio_unitario_crc: i.precio_crc || i.precio_unitario_crc || 0 })),
     local: true,
     estado_local: v.estado || 'pendiente',
   };
@@ -1204,6 +1227,8 @@ function pintarVender(app){
           <option value="un_pago_abono">A 1 pago con abono</option>
         </select></label>
       </div>
+      <button class="btn ghost" id="v-agregar" type="button" style="margin-top:8px">➕ Agregar perfume</button>
+      <div id="v-items" class="oculto" style="margin:8px 0"></div>
       <label class="f"><span>Cliente</span><input id="v-cli" placeholder="Nombre y apellido" autocomplete="off"></label>
       <label class="f"><span>Teléfono</span><input id="v-tel" type="tel" placeholder="8888 8888" inputmode="tel" autocomplete="off"></label>
       <div id="v-plan" class="oculto">
@@ -1226,9 +1251,58 @@ function pintarVender(app){
       <div id="v-confirmacion" class="aviso ok" style="display:none"></div>
     </div>`;
 
+  let vItems = [];
   const $p = () => datos.inventario.find(x => String(x.id) === $('#v-prod').value);
   const $cant = () => Math.max(1, Math.round(num($('#v-cant').value)));
   const $tipo = () => $('#v-tipo').value;
+  const cantTotal = () => vItems.reduce((s, i) => s + (num(i.cantidad) || 1), 0);
+  const totalBase = () => vItems.reduce((s, i) => s + (num(i.precio_crc) || 0) * (num(i.cantidad) || 1), 0);
+  const totalVentaItems = tipo => {
+    const planN = planDe(tipo);
+    const rec = planN > 0 ? recargoDe(tipo) : 0;
+    return mil(totalBase() * (1 + rec / 100));
+  };
+  const stockDeItem = it => {
+    const p = datos.inventario.find(x => String(x.id) === String(it.producto_id));
+    return p ? stockLocalDe(p) : 0;
+  };
+  const primaSugeridaItems = () => {
+    const total = totalVentaItems($tipo());
+    const suma = vItems.reduce((s, i) => {
+      const p = datos.inventario.find(x => String(x.id) === String(i.producto_id));
+      return s + (p ? primaDe(p) * (num(i.cantidad) || 1) : 0);
+    }, 0);
+    return Math.min(suma, total);
+  };
+
+  const renderItems = () => {
+    const wrap = $('#v-items'); if(!wrap) return;
+    if(!vItems.length){ wrap.classList.add('oculto'); wrap.innerHTML = ''; return; }
+    wrap.classList.remove('oculto');
+    wrap.innerHTML = `<div class="hint" style="margin:0 0 6px">Perfumes de esta venta (${vItems.length} de 8)</div>` +
+      vItems.map((it, i) => `<div style="display:flex;align-items:center;gap:6px;padding:7px 0;border-bottom:1px solid var(--line)">
+        <span style="flex:1;min-width:0;font-size:13px;line-height:1.25">${esc(it.nombre)}</span>
+        <input type="number" min="1" step="1" value="${it.cantidad}" data-cant="${i}" style="width:56px;margin:0;padding:6px;text-align:center">
+        <b style="font-size:12px;white-space:nowrap">${money(num(it.precio_crc) * num(it.cantidad))}</b>
+        <button type="button" data-del="${i}" style="background:none;border:0;color:var(--red);font-size:16px;padding:2px 4px;cursor:pointer">✕</button>
+      </div>`).join('');
+  };
+
+  const agregarProducto = (p, cant) => {
+    if(!p) return;
+    const c = Math.max(1, Math.round(num(cant) || 1));
+    const ya = vItems.find(i => String(i.producto_id) === String(p.id));
+    if(!ya && vItems.length >= 8) return toast('Máximo 8 perfumes por venta', 'error');
+    if(ya) ya.cantidad += c;
+    else vItems.push({ producto_id: p.id, nombre: p.nombre, precio_crc: num(p.precio_crc), cantidad: c, foto: p.foto || '' });
+    $('#v-prod').value = '';
+    $('#v-prod-buscar').value = '';
+    $('#v-cant').value = 1;
+    $('#v-prod-sug').classList.add('oculto');
+    const ab = $('#v-abono'); if(ab) ab.dataset.tocado = '';
+    renderItems();
+    actualizar();
+  };
 
   const mostrarSugProd = () => {
     const box = $('#v-prod-sug');
@@ -1269,45 +1343,44 @@ function pintarVender(app){
     box.querySelectorAll('[data-pid]').forEach(el => {
       el.onclick = () => {
         const p = datos.inventario.find(x => String(x.id) === String(el.dataset.pid));
-        if(!p) return;
-        $('#v-prod').value = String(p.id);
-        $('#v-prod-buscar').value = p.nombre;
-        box.classList.add('oculto');
-        const ab = $('#v-abono'); if(ab) ab.dataset.tocado = '';
-        actualizar();
+        if(p) agregarProducto(p, $cant());
       };
     });
   };
 
   const actualizar = () => {
-    const p = $p();
     const res = $('#v-resumen');
-    if(!p){
+    if(!vItems.length){
       res.style.display = 'none';
+      $('#v-plan').classList.add('oculto');
       return;
     }
     const tipo = $tipo();
     const planN = planDe(tipo);
     const esPlan = planN > 0;
-    const cant = $cant();
-    const total = totalVenta(p, cant, tipo);
+    const total = totalVentaItems(tipo);
 
     $('#v-plan').classList.toggle('oculto', !esPlan);
 
     const abonoPagado = !!($('#v-abono-pagado') && $('#v-abono-pagado').checked);
-
     const abono = $('#v-abono');
     if(!esPlan) abono.value = 0;
-    else if(!abono.dataset.tocado) abono.value = Math.min(primaDe(p) * cant, total);
+    else if(!abono.dataset.tocado) abono.value = Math.min(primaSugeridaItems(), total);
 
     const monto = esPlan ? Math.min(num(abono.value), total) : total;
     const resto = Math.max(0, total - monto);
     const nCuotas = esPlan ? planN : 0;
     const partesPago = nCuotas > 0 ? repartirMonto(resto, nCuotas) : [];
     const cuota = partesPago[0] || 0;
-    const st = stockLocalDe(p);
 
-    const partes = [`<b>Total: ${money(total)}</b>`];
+    const problemas = vItems.map(it => {
+      const st = stockDeItem(it);
+      if(st <= 0) return `⛔ ${it.nombre}: sin existencia`;
+      if((num(it.cantidad) || 1) > st) return `⛔ ${it.nombre}: solo hay ${st}`;
+      return '';
+    }).filter(Boolean);
+
+    const partes = [`<b>Total: ${money(total)}</b>`, `${cantTotal()} perfume${cantTotal() === 1 ? '' : 's'}`];
     if(esPlan){
       if(monto > 0) partes.push(`${abonoPagado ? 'Abono ya cubierto' : 'Abono (primer pago)'}: ${money(monto)}`);
       if(nCuotas > 0) partes.push(`${nCuotas} pago${nCuotas === 1 ? '' : 's'} de ${money(cuota)}`);
@@ -1315,21 +1388,43 @@ function pintarVender(app){
     } else {
       partes.push(`Pagado: ${money(total)} · Saldo ₡0`);
     }
-    if(st <= 0) partes.push('<span style="color:var(--red)">⛔ Sin existencia</span>');
-    else if(cant > st) partes.push(`<span style="color:var(--red)">⛔ Solo hay ${st} en stock</span>`);
-    else partes.push(`<span style="color:var(--green)">✅ ${st} en stock</span>`);
+    if(problemas.length) partes.push(problemas.join(' · '));
+    else partes.push('<span style="color:var(--green)">✅ Stock OK</span>');
 
     res.style.display = '';
     res.innerHTML = partes.join(' · ');
   };
 
   $('#v-prod-buscar').addEventListener('input', () => {
-    $('#v-prod').value = '';
+    const q = $('#v-prod-buscar').value.trim();
+    const exacto = q ? datos.inventario.find(p => norm(p.nombre) === norm(q)) : null;
+    $('#v-prod').value = exacto ? String(exacto.id) : '';
     mostrarSugProd();
-    actualizar();
   });
   $('#v-prod-buscar').addEventListener('focus', mostrarSugProd);
   $('#v-cant').addEventListener('input', actualizar);
+  $('#v-agregar').onclick = () => {
+    const p = $p();
+    if(!p) return toast('Elegí un perfume de la lista', 'error');
+    agregarProducto(p, $cant());
+  };
+  $('#v-items').addEventListener('input', ev => {
+    const inp = ev.target.closest('[data-cant]'); if(!inp) return;
+    const i = +inp.dataset.cant; if(!vItems[i]) return;
+    vItems[i].cantidad = Math.max(1, Math.round(num(inp.value) || 1));
+    const b = inp.parentElement.querySelector('b');
+    if(b) b.textContent = money(num(vItems[i].precio_crc) * vItems[i].cantidad);
+    actualizar();
+  });
+  $('#v-items').addEventListener('change', ev => {
+    if(ev.target.closest('[data-cant]')) renderItems();
+  });
+  $('#v-items').addEventListener('click', ev => {
+    const b = ev.target.closest('[data-del]'); if(!b) return;
+    vItems.splice(+b.dataset.del, 1);
+    renderItems();
+    actualizar();
+  });
   $('#v-tipo').addEventListener('change', () => {
     const ab = $('#v-abono'); if(ab) ab.dataset.tocado = '';
     actualizar();
@@ -1338,43 +1433,69 @@ function pintarVender(app){
   $('#v-abono').addEventListener('input', e => { e.target.dataset.tocado = '1'; actualizar(); });
   $('#v-fecha').value = proximaCuotaISO();
 
+  const vDesdeFormulario = (estado) => {
+    const tipo = $tipo();
+    const planN = planDe(tipo);
+    const total = totalVentaItems(tipo);
+    const abono = planN > 0 ? Math.min(num($('#v-abono').value), total) : total;
+    const fecha = planN > 0 ? ($('#v-fecha').value || proximaCuotaISO()) : '';
+    return {
+      cliente: $('#v-cli').value.trim(),
+      telefono: $('#v-tel').value.trim(),
+      perfume: vItems.map(i => i.nombre).join(' + '),
+      perfume_id: vItems[0] ? vItems[0].producto_id : '',
+      foto: vItems[0] ? (vItems[0].foto || '') : '',
+      cantidad: cantTotal(),
+      monto: total,
+      abono,
+      tipo,
+      abono_pagado: !!($('#v-abono-pagado') && $('#v-abono-pagado').checked),
+      fecha,
+      fecha_venta: hoyISO(),
+      referencia: $('#v-ref').value.trim(),
+      estado,
+      items: vItems.map(i => ({ producto_id: i.producto_id, nombre: i.nombre, cantidad: i.cantidad, precio_unitario_crc: i.precio_crc, foto: i.foto || '' })),
+    };
+  };
+
+  $('#v-proforma').onclick = async () => {
+    if(!vItems.length) return toast('Agregá al menos un perfume', 'error');
+    const v = vDesdeFormulario('proforma');
+    if(!v.cliente) return toast('Escribí el nombre del cliente', 'error');
+    toast('📄 Armando la proforma…');
+    try {
+      const r = await facturaCelDocumento(v, 'proforma');
+      await entregarImagen(r.png, '📄 Proforma copiada — pegala en el chat', r.texto);
+      if(v.telefono) setTimeout(() => abrirWhatsApp(r.texto, v.telefono), 700);
+    } catch(e){
+      toast('No pude armar la proforma: ' + e.message, 'error');
+    }
+  };
+
   $('#v-guardar').onclick = async () => {
     const t = token();
     if(!t) return toast('Falta la clave en Acceso', 'error');
-    const p = $p();
-    if(!p) return toast('Elegí un perfume de la lista', 'error');
-    const cant = $cant();
-    if(stockLocalDe(p) <= 0) return toast(`Sin existencia: ${p.nombre}`, 'error');
-    if(cant > stockLocalDe(p)) return toast(`Solo hay ${stockLocalDe(p)} en stock`, 'error');
+    if(!vItems.length) return toast('Agregá al menos un perfume', 'error');
     const cliente = $('#v-cli').value.trim();
     const tel = $('#v-tel').value.trim();
     if(!cliente) return toast('Falta el nombre del cliente', 'error');
     if(!tel) return toast('Falta el teléfono del cliente', 'error');
-    const tipo = $tipo();
-    const planN = planDe(tipo);
-    const esPlan = planN > 0;
-    const total = totalVenta(p, cant, tipo);
-    const abono = esPlan ? Math.min(num($('#v-abono').value), total) : total;
-    const fecha = esPlan ? ($('#v-fecha').value || proximaCuotaISO()) : '';
-    const abonoPagado = !!($('#v-abono-pagado') && $('#v-abono-pagado').checked);
-    const modo = 'inicial';
-    const nota = $('#v-nota').value.trim();
-    const referencia = $('#v-ref').value.trim();
-    const etiquetaPago = { contado:'contado', pagos:'2 pagos', pagos3:'3 pagos', pagos4:'4 pagos', pagos5:'5 pagos', pagos_sin_recargo:'2 pagos sin recargo', un_pago_abono:'1 pago con abono' }[tipo] || tipo;
-    const vFake = {
-      cliente, telefono: tel, perfume: p.nombre, perfume_id: p.id, foto: p.foto || '',
-      cantidad: cant, monto: total, abono, tipo, abono_pagado: abonoPagado,
-      fecha, fecha_venta: hoyISO(), referencia, nota, estado: 'pendiente',
-    };
-    const plan = planLocal(vFake);
+    for(const it of vItems){
+      const st = stockDeItem(it);
+      if(st <= 0) return toast(`Sin existencia: ${it.nombre}`, 'error');
+      if((num(it.cantidad) || 1) > st) return toast(`Solo hay ${st} de ${it.nombre}`, 'error');
+    }
+    const v = vDesdeFormulario('pendiente');
+    const plan = planLocal(v);
     const cuotasMarca = (plan.cuotas || []).map(c => ({ fecha: c.vencimiento, monto: Math.round(c.monto), tipo: c.tipo === 'prima' ? 'prima' : 'abono' }));
     const primera = (plan.cuotas || []).find(c => !c.pagada);
-    const abonoFecha = abonoPagado ? hoyISO() : fecha;
+    const abonoFecha = v.abono_pagado ? hoyISO() : v.fecha;
+    const etiquetaPago = { contado:'contado', pagos:'2 pagos', pagos3:'3 pagos', pagos4:'4 pagos', pagos5:'5 pagos', pagos_sin_recargo:'2 pagos sin recargo', un_pago_abono:'1 pago con abono' }[v.tipo] || v.tipo;
     const marca = '[[KQV:' + JSON.stringify({
-      tipo_pago: tipo, abono: abono,
-      primera_cuota: primera ? primera.vencimiento : fecha,
-      abono_modo: modo, abono_pagado: abonoPagado, abono_fecha: abonoFecha,
-      cuotas: cuotasMarca, referencia: referencia,
+      tipo_pago: v.tipo, abono: v.abono,
+      primera_cuota: primera ? primera.vencimiento : v.fecha,
+      abono_modo: 'inicial', abono_pagado: v.abono_pagado, abono_fecha: abonoFecha,
+      cuotas: cuotasMarca, items: v.items, referencia: v.referencia,
     }) + ']]';
 
     const btn = $('#v-guardar');
@@ -1386,37 +1507,19 @@ function pintarVender(app){
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action: 'movimiento', token: t, tipo: 'venta',
-          perfume_id: p.id, perfume: p.nombre, cantidad: cant,
-          cliente: cliente, telefono: tel, monto: total,
-          tipo_pago: tipo, abono: abono, primera_cuota: primera ? primera.vencimiento : fecha,
-          abono_modo: modo, abono_pagado: abonoPagado, abono_fecha: abonoFecha, referencia: referencia,
-          nota: ((nota ? nota + ' · ' : '') + 'Venta app · ' + etiquetaPago + ' ' + marca).trim(),
+          perfume_id: v.perfume_id, perfume: v.perfume, cantidad: v.cantidad,
+          cliente: v.cliente, telefono: v.telefono, monto: v.monto,
+          tipo_pago: v.tipo, abono: v.abono, primera_cuota: primera ? primera.vencimiento : v.fecha,
+          abono_modo: 'inicial', abono_pagado: v.abono_pagado, abono_fecha: abonoFecha, referencia: v.referencia,
+          items: v.items.map(i => ({ producto_id: i.producto_id, cantidad: i.cantidad })),
+          nota: ((($('#v-nota').value.trim()) ? $('#v-nota').value.trim() + ' · ' : '') + 'Venta app · ' + etiquetaPago + ' ' + marca).trim(),
           dispositivo: 'app-celular'
         })
       });
       const j = await r.json();
       if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó la venta');
 
-      const vLocal = {
-        id: j.id,
-        ts: Date.now(),
-        cliente: cliente,
-        telefono: tel,
-        perfume: p.nombre,
-        perfume_id: p.id,
-        foto: p.foto || '',
-        cantidad: cant,
-        monto: total,
-        abono: abono,
-        tipo: tipo,
-        modo: modo,
-        abono_pagado: abonoPagado,
-        abono_fecha: abonoFecha,
-        fecha: fecha || '',
-        referencia: referencia || '',
-        fecha_venta: hoyISO(),
-        estado: 'pendiente'
-      };
+      const vLocal = { ...v, id: j.id, ts: Date.now(), modo: 'inicial', abono_fecha: abonoFecha, estado: 'pendiente' };
       const lista = ventasLocales();
       lista.unshift(vLocal);
       guardarVentasLocales(lista);
@@ -1427,7 +1530,9 @@ function pintarVender(app){
       $('#v-ref').value = '';
       $('#v-prod').value = '';
       $('#v-prod-buscar').value = '';
-      const ab = $('#v-abono'); ab.dataset.tocado = '';
+      vItems = [];
+      renderItems();
+      const ab = $('#v-abono'); if(ab){ ab.dataset.tocado = ''; ab.value = 0; }
       actualizar();
       mostrarVentaAnotada(vLocal);
     } catch(e){
@@ -1435,33 +1540,6 @@ function pintarVender(app){
     } finally {
       btn.disabled = false;
       btn.textContent = 'Registrar venta';
-    }
-  };
-
-  $('#v-proforma').onclick = async () => {
-    const p = $p();
-    if(!p) return toast('Elegí un perfume de la lista', 'error');
-    const cliente = $('#v-cli').value.trim();
-    if(!cliente) return toast('Escribí el nombre del cliente', 'error');
-    const tipo = $tipo();
-    const planN = planDe(tipo);
-    const cant = $cant();
-    const total = totalVenta(p, cant, tipo);
-    const abono = planN > 0 ? Math.min(num($('#v-abono').value), total) : total;
-    const fecha = planN > 0 ? ($('#v-fecha').value || proximaCuotaISO()) : '';
-    const v = {
-      cliente, telefono: $('#v-tel').value.trim(), perfume: p.nombre, perfume_id: p.id,
-      foto: p.foto || '', cantidad: cant, monto: total, abono, tipo,
-      abono_pagado: !!($('#v-abono-pagado') && $('#v-abono-pagado').checked),
-      fecha, fecha_venta: hoyISO(), referencia: $('#v-ref').value.trim(), estado: 'proforma',
-    };
-    toast('📄 Armando la proforma…');
-    try {
-      const r = await facturaCelDocumento(v, 'proforma');
-      await entregarImagen(r.png, '📄 Proforma copiada — pegala en el chat', r.texto);
-      if(v.telefono) setTimeout(() => abrirWhatsApp(r.texto, v.telefono), 700);
-    } catch(e){
-      toast('No pude armar la proforma: ' + e.message, 'error');
     }
   };
 
