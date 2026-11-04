@@ -874,10 +874,13 @@ function datosFacturaCel(v){
 }
 
 function porPerfumesCel(v){
-  const items = (v && Array.isArray(v.items) && v.items.length)
-    ? v.items
-    : [{ nombre: v && (v.perfume || v.producto || v.perfume_nombre) }];
-  const nombres = items.map(i => String((i && i.nombre) || '').trim()).filter(Boolean).map(n => `*${n}*`);
+  let crudos = (v && Array.isArray(v.items) && v.items.length) ? v.items : [];
+  if(!crudos.length){
+    const texto = String((v && (v.perfume || v.producto || v.perfume_nombre)) || '');
+    const partes = texto.split(' + ').map(s => s.trim()).filter(Boolean);
+    crudos = partes.length ? partes.map(nombre => ({ nombre })) : [{ nombre: texto }];
+  }
+  const nombres = crudos.map(i => String((i && i.nombre) || '').trim()).filter(Boolean).map(n => `*${n}*`);
   if(!nombres.length) return '';
   if(nombres.length === 1) return `por el perfume ${nombres[0]}`;
   if(nombres.length === 2) return `por los perfumes ${nombres[0]} y ${nombres[1]}`;
@@ -952,9 +955,14 @@ function precioContadoCel(v){
 
 async function facturaCelDocumento(v, tipo){
   const info = datosFacturaCel(v);
-  const crudos = (v.items && v.items.length)
-    ? v.items
-    : [{ producto_id: v.perfume_id || v.producto_id, nombre: v.perfume || v.producto || 'Perfume', cantidad: v.cantidad, precio_unitario_crc: precioContadoCel(v) }];
+  let crudos = (v.items && v.items.length) ? v.items : [];
+  if(!crudos.length){
+    const texto = String(v.perfume || v.producto || 'Perfume');
+    const partes = texto.split(' + ').map(s => s.trim()).filter(Boolean);
+    crudos = partes.length > 1
+      ? partes.map(nombre => ({ nombre, cantidad: 1 }))
+      : [{ producto_id: v.perfume_id || v.producto_id, nombre: texto, cantidad: v.cantidad, precio_unitario_crc: precioContadoCel(v) }];
+  }
   const items = crudos.map(it => {
     const p = productoDeVentaCel({ producto_id: it.producto_id, perfume_id: it.producto_id, nombre: it.nombre });
     const precio = num(it.precio_unitario_crc || it.precio_crc) || (p ? num(p.precio_crc) : 0) || precioContadoCel({ perfume_id: it.producto_id, perfume: it.nombre });
