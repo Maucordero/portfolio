@@ -15,6 +15,7 @@ function cargarImagenURL(url){
     i.src = url;
   });
 }
+function redondearMilCel(n){ return Math.round((Number(n) || 0) / 1000) * 1000; }
 function telefonoNegocio(){
   const cfg = (window.datos && datos.config) || {};
   for (const raw of [cfg.wa_numero, cfg.catalogo_wa, cfg.whatsapp]){
@@ -150,14 +151,14 @@ async function facturaPagoUnicoCel(datos, opts = {}){
     let acum = 0;
     lineasPrecios.forEach((l, i) => {
       if (i < lineasPrecios.length - 1){
-        const totalPagos = Math.round((l.precioContado * l.cant) * factorPagos);
-        const precioPagos = l.cant > 0 ? Math.round(totalPagos / l.cant) : totalPagos;
+        const totalPagos = redondearMilCel((l.precioContado * l.cant) * factorPagos);
+        const precioPagos = l.cant > 0 ? redondearMilCel(totalPagos / l.cant) : totalPagos;
         l.precioPagos = precioPagos;
         l.totalPagos = precioPagos * l.cant;
         acum += l.totalPagos;
       } else {
         l.totalPagos = totalFinal - acum;
-        l.precioPagos = l.cant > 0 ? Math.round(l.totalPagos / l.cant) : l.totalPagos;
+        l.precioPagos = l.cant > 0 ? redondearMilCel(l.totalPagos / l.cant) : l.totalPagos;
       }
     });
   }
