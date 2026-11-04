@@ -254,6 +254,7 @@
 <div id="hoja-wrap"></div>
 <div class="toast" id="toast"></div>
 
+<script src="factura.js"></script>
 <script>
 /* ============================================================
    King Quepoa · app del celular
@@ -262,7 +263,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.15.0';
+const VERSION = '1.16.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1' };
@@ -690,6 +691,15 @@ function proximaCuotaISO(){
 function planDe(tipo){
   return ({ pagos:2, pagos_sin_recargo:2, un_pago_abono:1, pagos3:3, pagos4:4, pagos5:5 })[tipo] || 0;
 }
+function repartirMonto(total, n){
+  const t = Math.max(0, Math.round(num(total)));
+  if(n <= 0) return [];
+  const base = Math.floor(t / n);
+  return Array.from({ length: n }, (_, i) => i === n - 1 ? t - base * (n - 1) : base);
+}
+function etiquetaPagoCel(n){
+  return ["Primer pago","Segundo pago","Tercer pago","Cuarto pago","Quinto pago","Sexto pago"][n - 1] || ("Pago " + n);
+}
 function recargoDe(tipo){
   const n = planDe(tipo);
   if(!n || tipo === 'pagos_sin_recargo' || tipo === 'un_pago_abono') return 0;
@@ -741,29 +751,53 @@ function normalizarVentaLocal(v){
 
 function planLocal(v){
   v = normalizarVentaLocal(v);
-  const total = Math.max(0, num(v && v.monto));
-  const tipo = String((v && v.tipo) || 'contado');
+  const total = Math.max(0, num(v && (v.monto != null ? v.monto : v.total)));
+  const tipo = String((v && (v.tipo || v.tipo_pago)) || 'contado');
   const planN = planDe(tipo);
   const abono = Math.min(Math.max(0, num(v && v.abono)), total);
-  const fecha = String((v && v.fecha) || proximaCuotaISO()).slice(0, 10);
+  const fecha = String((v && (v.fecha || v.primera_cuota)) || proximaCuotaISO()).slice(0, 10);
   let cuotas = [];
   let abonado = abono;
   let saldo = Math.max(total - abono, 0);
 
   if(planN > 0){
-    if(planN >= 2 && v.modo === 'primer_pago' && abono > 0){
+    const nuevoModelo = v.abono_pagado !== undefined && v.abono_pagado !== null;
+    if(nuevoModelo){
+      const abonoPagado = !!v.abono_pagado;
+      const primeraPago = abonoPagado ? fecha : (cuotasProg(fecha, 2)[1] || fecha);
+      const fechas = cuotasProg(primeraPago, planN);
+      const partes = repartirMonto(Math.max(0, total - abono), planN);
+      const pagos = fechas.map((f, i) => ({ numero: i + 1, monto: partes[i], vencimiento: f, pagada: false, tipo: 'abono' }));
+      if(abono > 0){
+        cuotas = [
+          { numero: 0, monto: abono, monto_total: abono, vencimiento: abonoPagado ? String(v.fecha_venta || fecha).slice(0, 10) : fecha, pagada: abonoPagado, tipo: 'abono', etiqueta: 'Abono' },
+          ...pagos,
+        ];
+        abonado = abonoPagado ? abono : 0;
+        saldo = abonoPagado ? Math.max(total - abono, 0) : total;
+      } else {
+        cuotas = pagos;
+        abonado = 0;
+        saldo = total;
+      }
+    } else if(planN >= 2 && v.modo === 'primer_pago' && abono > 0){
+      // Compatibilidad con ventas locales viejas
       const n = planN - 1;
-      const parte = n > 0 ? Math.max(total - abono, 0) / n : 0;
+      const partes = repartirMonto(Math.max(total - abono, 0), n);
       const fechas = cuotasProg(fecha, n);
       cuotas = [
-        { numero: 1, monto: abono, vencimiento: String(v.fecha_venta || fecha).slice(0, 10), pagada: true, tipo: 'abono' },
-        ...fechas.map((f, i) => ({ numero: i + 2, monto: parte, vencimiento: f, pagada: false, tipo: 'abono' })),
+        { numero: 1, monto: abono, vencimiento: String(v.fecha_venta || fecha).slice(0, 10), pagada: true, tipo: 'abono', etiqueta: 'Abono' },
+        ...fechas.map((f, i) => ({ numero: i + 2, monto: partes[i], vencimiento: f, pagada: false, tipo: 'abono' })),
       ];
+      abonado = abono;
+      saldo = Math.max(total - abono, 0);
     } else {
-      const resto = Math.max(total - abono, 0);
-      const parte = resto / planN;
+      // Compatibilidad con ventas locales viejas (abono inicial)
+      const partes = repartirMonto(Math.max(total - abono, 0), planN);
       const fechas = cuotasProg(fecha, planN);
-      cuotas = fechas.map((f, i) => ({ numero: i + 1, monto: parte, vencimiento: f, pagada: false, tipo: 'abono' }));
+      cuotas = fechas.map((f, i) => ({ numero: i + 1, monto: partes[i], vencimiento: f, pagada: false, tipo: 'abono' }));
+      abonado = abono;
+      saldo = Math.max(total - abono, 0);
     }
   } else {
     abonado = total;
@@ -781,6 +815,183 @@ function planLocal(v){
     atrasado,
     completo: true,
   };
+}
+
+/* ---------- Factura / proforma / aviso con el mismo diseño de la PC ---------- */
+function datosFacturaCel(v){
+  v = normalizarVentaLocal(v);
+  const total = Math.max(0, num(v.total != null ? v.total : v.monto));
+  const tipo = String(v.tipo_pago || v.tipo || 'contado');
+  const planN = planDe(tipo);
+  let crudas = [];
+  if(Array.isArray(v.cuotas)) crudas = v.cuotas;
+  else if(typeof v.cuotas === 'string' && v.cuotas.trim()){
+    try { const j = JSON.parse(v.cuotas); if(Array.isArray(j)) crudas = j; } catch(e){}
+  }
+  if(!crudas.length && planN > 0){
+    const plan = planLocal(v);
+    crudas = plan.cuotas || [];
+  }
+  const normal = crudas.map(c => ({
+    monto: num(c.monto != null ? c.monto : c.m),
+    monto_total: num(c.monto_total != null ? c.monto_total : (c.mt != null ? c.mt : (c.monto != null ? c.monto : c.m))),
+    vencimiento: String(c.vencimiento || c.f || '').slice(0, 10),
+    pagada: !!(c.pagada != null ? c.pagada : c.p),
+    tipo: String(c.tipo || c.t || 'abono'),
+  })).filter(c => c.monto > 0.5);
+  const extra = planN > 0 && normal.length > planN;
+  const primerPagoModo = String(v.modo || '') === 'primer_pago';
+  const abonoComoCuota = extra || primerPagoModo;
+  let saldo = v.saldo != null ? num(v.saldo) : Math.max(total - normal.filter(c => c.pagada).reduce((s, c) => s + c.monto, 0), 0);
+  if(v.saldo == null && planN > 0) saldo = planLocal(v).saldo;
+  const pagada = saldo <= 0.5;
+  const filas = normal.map((c, i) => {
+    const esAbono = abonoComoCuota && i === 0;
+    const etiqueta = esAbono ? (c.tipo === 'prima' ? 'Prima' : 'Abono') : (c.tipo === 'prima' ? 'Prima' : etiquetaPagoCel(i + (abonoComoCuota ? 0 : 1)));
+    const p = c.pagada || pagada;
+    return {
+      etiqueta,
+      vencimiento: c.vencimiento,
+      monto: Math.round(p ? (c.monto_total || c.monto) : c.monto),
+      pagada: p,
+      tipo: esAbono ? 'abono' : (c.tipo === 'prima' ? 'prima' : 'pago'),
+    };
+  });
+  const abonoFila = filas.find(c => /^(Abono|Prima)/i.test(c.etiqueta)) || null;
+  const pagos = filas.filter(c => !/^(Abono|Prima)/i.test(c.etiqueta));
+  const pagosN = pagos.length;
+  const prox = filas.find(c => !c.pagada) || null;
+  const terminos = planN === 0 ? 'Contado' : (abonoFila ? `${abonoFila.etiqueta} + ${pagosN} pago${pagosN === 1 ? '' : 's'}` : `${pagosN} pago${pagosN === 1 ? '' : 's'}`);
+  return {
+    total, saldo, pagada, filas, abonoFila, pagos, pagosN, planN, prox, terminos,
+    vencimiento: prox ? prox.vencimiento : String(v.fecha_venta || '').slice(0, 10),
+  };
+}
+
+function porPerfumesCel(v){
+  const nombre = String((v && (v.perfume || v.producto || v.perfume_nombre)) || '').trim();
+  return nombre ? `por el perfume *${nombre}*` : '';
+}
+
+function detallePagosCel(filas, n){
+  if(!filas || !filas.length) return '';
+  const unir = arr => arr.length <= 1 ? (arr[0] || '') : `${arr.slice(0, -1).join(', ')} y ${arr[arr.length - 1]}`;
+  const montos = filas.map(c => Math.round(num(c.monto)));
+  const fechas = filas.map(c => fmtFechaCorta(c.vencimiento));
+  const iguales = montos.every(m => m === montos[0]);
+  if(iguales) return `${n} pago${n === 1 ? '' : 's'} de ${money(montos[0])}: ${unir(fechas)}`;
+  return `${n} pagos: ${unir(filas.map((c, i) => `${money(montos[i])} el ${fechas[i]}`))}`;
+}
+
+function textoDocumentoCel(v, tipo){
+  const info = datosFacturaCel(v);
+  const nombre = primerNombreDe(v.cliente || v.nombre || '');
+  const perfumes = porPerfumesCel(v);
+  const doc = tipo === 'proforma' ? 'la proforma' : 'tu factura';
+  let t = `¡Hola ${nombre}! 👋\nTe paso ${doc} ${perfumes}.\n`;
+  if(info.planN === 0){
+    t += `Al contado, esto es un pago único: ${money(info.total)}.`;
+    return t;
+  }
+  if(tipo !== 'proforma' && info.pagada){
+    t += `Ya está pagada (${info.terminos}): ${money(info.total)}.`;
+    return t;
+  }
+  const pagosTxt = detallePagosCel(info.pagos, info.pagosN);
+  if(info.abonoFila && !info.abonoFila.pagada){
+    const esPrima = info.abonoFila.etiqueta.toLowerCase() === 'prima';
+    t += `Queda en ${esPrima ? 'una prima' : 'un abono'} de ${money(info.abonoFila.monto)} el ${fmtFechaCorta(info.abonoFila.vencimiento)}`;
+    t += pagosTxt ? ` y ${pagosTxt}.` : '.';
+  } else if(info.abonoFila && info.abonoFila.pagada){
+    const esPrima = info.abonoFila.etiqueta.toLowerCase() === 'prima';
+    t += `Tu ${esPrima ? 'prima' : 'abono'} de ${money(info.abonoFila.monto)} ya está ${esPrima ? 'cubierta' : 'cubierto'}`;
+    t += pagosTxt ? `; quedan ${pagosTxt}.` : '.';
+  } else if(pagosTxt){
+    t += `Queda en ${pagosTxt}.`;
+  } else {
+    t += `Total: ${money(info.total)}.`;
+  }
+  return t;
+}
+
+function textoCobroCel(v){
+  const info = datosFacturaCel(v);
+  const prox = info.prox;
+  return `¡Hola ${primerNombreDe(v.cliente || v.nombre || '')}! 👋\nEsto es un recordatorio de tu pago ${porPerfumesCel(v)} para el ${fmtFechaCorta(prox ? prox.vencimiento : info.vencimiento)}: ${money(prox ? prox.monto : info.saldo)}.`;
+}
+
+function productoDeVentaCel(v){
+  const id = String(v.perfume_id || v.producto_id || '');
+  let p = id ? datos.inventario.find(x => String(x.id) === id) : null;
+  if(!p){
+    const n = norm(v.perfume || v.producto || '');
+    p = datos.inventario.find(x => norm(x.nombre) === n);
+  }
+  return p || null;
+}
+
+function precioContadoCel(v){
+  const p = productoDeVentaCel(v);
+  if(p && num(p.precio_crc) > 0) return Math.round(num(p.precio_crc));
+  const tipo = String(v.tipo_pago || v.tipo || 'contado');
+  const rec = recargoDe(tipo);
+  const total = num(v.total != null ? v.total : v.monto);
+  return rec > 0 ? Math.round(total / (1 + rec / 100)) : Math.round(total);
+}
+
+async function facturaCelDocumento(v, tipo){
+  const info = datosFacturaCel(v);
+  const item = {
+    nombre: v.perfume || v.producto || 'Perfume',
+    cantidad: Math.max(1, num(v.cantidad) || 1),
+    precio_unitario_crc: precioContadoCel(v),
+  };
+  const proforma = tipo === 'proforma';
+  const opts = {
+    proforma,
+    pagada: tipo === 'recordatorio' ? false : info.pagada,
+    titulo: proforma ? 'PROFORMA' : (tipo === 'recordatorio' ? 'RECORDATORIO DE PAGO' : 'FACTURA'),
+    numero: (v.venta_id || v.id) ? 'KQ' + String(v.venta_id || v.id).padStart(5, '0') : undefined,
+    terminos: info.terminos,
+    cuotas: info.filas,
+    vencimiento: info.vencimiento,
+    saldo: info.saldo,
+    config: datos.config || {},
+    logo: './logo.png',
+  };
+  if(proforma){
+    opts.etiquetaCabecera = info.planN > 0 ? 'A PAGOS' : 'TOTAL A PAGAR';
+    opts.montoCabecera = info.total;
+  } else if(tipo === 'recordatorio'){
+    opts.etiquetaCabecera = 'PRÓXIMO PAGO';
+    opts.montoCabecera = info.prox ? info.prox.monto : info.saldo;
+  }
+  const png = await facturaPagoUnicoCel({
+    cliente: v.cliente || v.nombre || '',
+    tel: v.telefono || v.cliente_tel || '',
+    items: [item],
+    total: info.total,
+    fecha: tipo === 'recordatorio' ? hoyISO() : (v.fecha_venta || hoyISO()),
+    saldo: info.saldo,
+  }, opts);
+  return { png, texto: tipo === 'recordatorio' ? textoCobroCel(v) : textoDocumentoCel(v, tipo), info };
+}
+
+function seleccionCobroCel(c){
+  const cli = (c && c.ventas) ? c : {
+    nombre: c && (c.cliente || c.nombre),
+    telefono: c && (c.telefono || c.tel),
+    ventas: c ? [c] : [],
+  };
+  let prox = null, vSel = null;
+  for(const v of (cli.ventas || [])){
+    const info = datosFacturaCel(v);
+    if(info.prox && (!prox || info.prox.vencimiento < prox.vencimiento)){
+      prox = info.prox;
+      vSel = v;
+    }
+  }
+  return { cli, v: vSel, prox, info: vSel ? datosFacturaCel(vSel) : null };
 }
 
 function cobroLocal(v){
@@ -949,10 +1160,10 @@ function mostrarVentaAnotada(v){
   const plan = planLocal(v);
   el.innerHTML = `<div>✅ Venta anotada · ${esc(v.cliente)} · ${esc(v.perfume)} · ${money(v.monto)}</div>
     <div style="font-size:12px;margin-top:4px;color:var(--muted)">
-      ${plan.saldo > 0.5 ? 'Saldo ' + money(plan.saldo) + ' · ' : ''}Queda en Cobros como <b>pendiente</b> hasta que la PC la aplique.
+      ${plan.saldo > 0.5 ? `Saldo ${money(plan.saldo)} · Queda en Cobros como <b>pendiente</b> hasta que la PC la aplique.` : 'Queda <b>pendiente</b> hasta que la PC la aplique.'}
     </div>
     <div class="acciones" style="margin-top:8px;justify-content:flex-end;gap:8px;flex-wrap:wrap">
-      ${plan.saldo > 0.5 ? '<button class="btn sm" id="cf-factura">📲 Factura</button>' : ''}
+      <button class="btn sm" id="cf-factura">📲 Factura</button>
       ${v.telefono ? '<button class="btn ghost sm" id="cf-gracias">🙏 Agradecimiento</button>' : ''}
       <button class="btn ghost sm" id="cf-cerrar">Cerrar</button>
     </div>`;
@@ -996,17 +1207,20 @@ function pintarVender(app){
       <label class="f"><span>Teléfono</span><input id="v-tel" type="tel" placeholder="8888 8888" inputmode="tel" autocomplete="off"></label>
       <div id="v-plan" class="oculto">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <label class="f"><span>Me da ahora</span><input id="v-abono" type="number" min="0" step="100" inputmode="numeric"></label>
-          <label class="f" id="v-fecha-wrap"><span>Primer abono</span><input id="v-fecha" type="date"></label>
+          <label class="f"><span>Abono</span><input id="v-abono" type="number" min="0" step="100" inputmode="numeric"></label>
+          <label class="f" id="v-fecha-wrap"><span>Fecha del abono / primer pago</span><input id="v-fecha" type="date"></label>
         </div>
-        <label class="f" id="v-modo-wrap"><span>Eso es</span><select id="v-modo">
-          <option value="inicial">Abono inicial (adelanto)</option>
-          <option value="primer_pago">Primer abono (pago 1)</option>
-        </select></label>
+        <label class="f" style="display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.35;color:var(--muted);padding:8px 0">
+          <input type="checkbox" id="v-abono-pagado" style="width:auto;margin-top:2px;accent-color:var(--accent)">
+          <span><b style="color:var(--text)">Ya lo dio</b> o lo da antes del primer pago</span>
+        </label>
       </div>
       <label class="f"><span>Referencia (solo para vos)</span><input id="v-ref" placeholder="Ej: chofer Pany" autocomplete="off"></label>
       <label class="f"><span>Nota (opcional)</span><input id="v-nota" placeholder="Ej: entrega el viernes"></label>
       <div id="v-resumen" class="aviso" style="display:none"></div>
+      <div class="acciones" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <button class="btn ghost" id="v-proforma" type="button" title="Mostrarle la proforma al cliente sin registrar la venta">📄 Proforma</button>
+      </div>
       <button class="btn" id="v-guardar">Registrar venta</button>
       <div id="v-confirmacion" class="aviso ok" style="display:none"></div>
     </div>`;
@@ -1079,9 +1293,7 @@ function pintarVender(app){
 
     $('#v-plan').classList.toggle('oculto', !esPlan);
 
-    const puedePrimer = planN >= 2;
-    const modoWrap = $('#v-modo-wrap');
-    if(modoWrap) modoWrap.classList.toggle('oculto', !puedePrimer);
+    const abonoPagado = !!($('#v-abono-pagado') && $('#v-abono-pagado').checked);
 
     const abono = $('#v-abono');
     if(!esPlan) abono.value = 0;
@@ -1089,16 +1301,15 @@ function pintarVender(app){
 
     const monto = esPlan ? Math.min(num(abono.value), total) : total;
     const resto = Math.max(0, total - monto);
-    const modo = $('#v-modo') ? $('#v-modo').value : 'inicial';
-    const esPrimer = esPlan && puedePrimer && modo === 'primer_pago' && monto > 0;
-    const nCuotas = !esPlan ? 0 : (esPrimer ? planN - 1 : planN);
-    const cuota = nCuotas > 0 ? Math.round(resto / nCuotas) : 0;
+    const nCuotas = esPlan ? planN : 0;
+    const partesPago = nCuotas > 0 ? repartirMonto(resto, nCuotas) : [];
+    const cuota = partesPago[0] || 0;
     const st = stockLocalDe(p);
 
     const partes = [`<b>Total: ${money(total)}</b>`];
     if(esPlan){
-      partes.push(`${esPrimer ? '1er pago' : 'Prima'}: ${money(monto)}`);
-      if(nCuotas > 0) partes.push(`Saldo ${money(resto)} en ${nCuotas} pago${nCuotas === 1 ? '' : 's'} de ${money(cuota)}`);
+      if(monto > 0) partes.push(`${abonoPagado ? 'Abono ya cubierto' : 'Abono (primer pago)'}: ${money(monto)}`);
+      if(nCuotas > 0) partes.push(`${nCuotas} pago${nCuotas === 1 ? '' : 's'} de ${money(cuota)}`);
       else partes.push('Queda pagada');
     } else {
       partes.push(`Pagado: ${money(total)} · Saldo ₡0`);
@@ -1122,7 +1333,7 @@ function pintarVender(app){
     const ab = $('#v-abono'); if(ab) ab.dataset.tocado = '';
     actualizar();
   });
-  $('#v-modo').addEventListener('change', actualizar);
+  $('#v-abono-pagado').addEventListener('change', actualizar);
   $('#v-abono').addEventListener('input', e => { e.target.dataset.tocado = '1'; actualizar(); });
   $('#v-fecha').value = proximaCuotaISO();
 
@@ -1144,12 +1355,26 @@ function pintarVender(app){
     const total = totalVenta(p, cant, tipo);
     const abono = esPlan ? Math.min(num($('#v-abono').value), total) : total;
     const fecha = esPlan ? ($('#v-fecha').value || proximaCuotaISO()) : '';
-    const puedePrimer = planN >= 2;
-    const modo = (puedePrimer && $('#v-modo').value === 'primer_pago' && abono > 0) ? 'primer_pago' : 'inicial';
+    const abonoPagado = !!($('#v-abono-pagado') && $('#v-abono-pagado').checked);
+    const modo = 'inicial';
     const nota = $('#v-nota').value.trim();
     const referencia = $('#v-ref').value.trim();
     const etiquetaPago = { contado:'contado', pagos:'2 pagos', pagos3:'3 pagos', pagos4:'4 pagos', pagos5:'5 pagos', pagos_sin_recargo:'2 pagos sin recargo', un_pago_abono:'1 pago con abono' }[tipo] || tipo;
-    const marca = '[[KQV:' + JSON.stringify({ tipo_pago: tipo, abono: abono, primera_cuota: fecha, abono_modo: modo, referencia: referencia }) + ']]';
+    const vFake = {
+      cliente, telefono: tel, perfume: p.nombre, perfume_id: p.id, foto: p.foto || '',
+      cantidad: cant, monto: total, abono, tipo, abono_pagado: abonoPagado,
+      fecha, fecha_venta: hoyISO(), referencia, nota, estado: 'pendiente',
+    };
+    const plan = planLocal(vFake);
+    const cuotasMarca = (plan.cuotas || []).map(c => ({ fecha: c.vencimiento, monto: Math.round(c.monto), tipo: c.tipo === 'prima' ? 'prima' : 'abono' }));
+    const primera = (plan.cuotas || []).find(c => !c.pagada);
+    const abonoFecha = abonoPagado ? hoyISO() : fecha;
+    const marca = '[[KQV:' + JSON.stringify({
+      tipo_pago: tipo, abono: abono,
+      primera_cuota: primera ? primera.vencimiento : fecha,
+      abono_modo: modo, abono_pagado: abonoPagado, abono_fecha: abonoFecha,
+      cuotas: cuotasMarca, referencia: referencia,
+    }) + ']]';
 
     const btn = $('#v-guardar');
     btn.disabled = true;
@@ -1162,7 +1387,8 @@ function pintarVender(app){
           action: 'movimiento', token: t, tipo: 'venta',
           perfume_id: p.id, perfume: p.nombre, cantidad: cant,
           cliente: cliente, telefono: tel, monto: total,
-          tipo_pago: tipo, abono: abono, primera_cuota: fecha, abono_modo: modo, referencia: referencia,
+          tipo_pago: tipo, abono: abono, primera_cuota: primera ? primera.vencimiento : fecha,
+          abono_modo: modo, abono_pagado: abonoPagado, abono_fecha: abonoFecha, referencia: referencia,
           nota: ((nota ? nota + ' · ' : '') + 'Venta app · ' + etiquetaPago + ' ' + marca).trim(),
           dispositivo: 'app-celular'
         })
@@ -1183,6 +1409,8 @@ function pintarVender(app){
         abono: abono,
         tipo: tipo,
         modo: modo,
+        abono_pagado: abonoPagado,
+        abono_fecha: abonoFecha,
         fecha: fecha || '',
         referencia: referencia || '',
         fecha_venta: hoyISO(),
@@ -1206,6 +1434,33 @@ function pintarVender(app){
     } finally {
       btn.disabled = false;
       btn.textContent = 'Registrar venta';
+    }
+  };
+
+  $('#v-proforma').onclick = async () => {
+    const p = $p();
+    if(!p) return toast('Elegí un perfume de la lista', 'error');
+    const cliente = $('#v-cli').value.trim();
+    if(!cliente) return toast('Escribí el nombre del cliente', 'error');
+    const tipo = $tipo();
+    const planN = planDe(tipo);
+    const cant = $cant();
+    const total = totalVenta(p, cant, tipo);
+    const abono = planN > 0 ? Math.min(num($('#v-abono').value), total) : total;
+    const fecha = planN > 0 ? ($('#v-fecha').value || proximaCuotaISO()) : '';
+    const v = {
+      cliente, telefono: $('#v-tel').value.trim(), perfume: p.nombre, perfume_id: p.id,
+      foto: p.foto || '', cantidad: cant, monto: total, abono, tipo,
+      abono_pagado: !!($('#v-abono-pagado') && $('#v-abono-pagado').checked),
+      fecha, fecha_venta: hoyISO(), referencia: $('#v-ref').value.trim(), estado: 'proforma',
+    };
+    toast('📄 Armando la proforma…');
+    try {
+      const r = await facturaCelDocumento(v, 'proforma');
+      await entregarImagen(r.png, '📄 Proforma copiada — pegala en el chat', r.texto);
+      if(v.telefono) setTimeout(() => abrirWhatsApp(r.texto, v.telefono), 700);
+    } catch(e){
+      toast('No pude armar la proforma: ' + e.message, 'error');
     }
   };
 
@@ -1404,10 +1659,21 @@ function mostrarImagenParaGuardar(blob){
 }
 
 // Entrega una imagen SIN link: portapapeles → guardar/mostrar. Devuelve true si la copió.
-async function entregarImagen(blob, mensaje){
+async function entregarImagen(blob, mensaje, texto){
   if(navigator.clipboard && window.ClipboardItem && window.isSecureContext){
     try {
-      await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+      if(texto){
+        try {
+          await navigator.clipboard.write([ new ClipboardItem({
+            'image/png': blob,
+            'text/plain': new Blob([texto], { type: 'text/plain' }),
+          }) ]);
+        } catch(e){
+          await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+        }
+      } else {
+        await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+      }
       toast(mensaje || '🖼 Imagen copiada — pegala en WhatsApp');
       return true;
     } catch(e){ /* el teléfono no deja copiar imágenes: la guardamos */ }
@@ -1558,195 +1824,39 @@ function clienteDeCobro(c){
   return { nombre: nombre, tel: tel, ventas: ventas };
 }
 
-// Recordatorio de pago como IMAGEN, con el MISMO formato que la factura de la PC:
-// logo + foto del perfume, título, cliente, próxima cuota, plan completo y datos de SINPE.
+// Recordatorio de pago: mismo diseño que la PC (tabla de pagos, pagados en dorado, actual en verde).
 async function imagenCobro(cli){
-  const cfg = datos.config || {};
-  const pago = String(cfg.datos_pago || '').trim();
-  const hoyStr = hoyISO();
-  const pend = (cli.ventas || []).filter(v => num(v.saldo) > 0.5);
-  let prox = null, proxV = null, proxIdx = -1;
-  for(const v of pend){
-    const arr = planDeVenta(v).arr;
-    const i = arr.findIndex(x => !x.pagada);
-    if(i >= 0 && (!prox || arr[i].vencimiento < prox.vencimiento)){ prox = arr[i]; proxV = v; proxIdx = i; }
-  }
-  const planProx = proxV ? planDeVenta(proxV) : null;
-  const totCuotas = planProx && planProx.completo ? planProx.arr.length : 0;
-  const tienePrima = !!(planProx && planProx.arr.some(x => x.tipo === 'prima'));
-  const titulo = prox
-    ? (prox.tipo === 'prima' ? 'AVISO DE PRIMA'
-       : tienePrima ? etiquetaCuota(proxV, planProx.arr, proxIdx).toUpperCase()
-       : (planProx && planProx.completo
-          ? (prox.numero === totCuotas ? 'RECORDATORIO DE ÚLTIMO PAGO' : 'RECORDATORIO DE PAGO ' + prox.numero + ' DE ' + totCuotas)
-          : 'RECORDATORIO DE PAGO'))
-    : 'RECORDATORIO DE PAGO';
-
-  const W = 1080, M = 80, cx = W / 2;
-  const FUENTE = "'Segoe UI', Roboto, Arial, sans-serif";
-  const cv = document.createElement('canvas'); cv.width = W; cv.height = 6000;
-  const ctx = cv.getContext('2d');
-  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, cv.height);
-  ctx.textBaseline = 'top'; ctx.textAlign = 'center';
-  let y = 40;
-
-  function linea(){
-    ctx.strokeStyle = '#e6d6a8'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(M, y); ctx.lineTo(W - M, y); ctx.stroke(); y += 34;
-  }
-  function texto(t, font, color, lh){
-    ctx.font = font; ctx.fillStyle = color;
-    for(const ln of envolverTexto(ctx, t, W - M * 2)){ ctx.fillText(ln, cx, y); y += lh; }
-  }
-
-  // Arriba: LOGO + FOTO del perfume (con el nombre chico)
-  const primV = pend[0];
-  const lado = 200, gap = 80;
-  const logo = await cargarBitmap('./logo.png');
-  const fotoP = primV ? fotoDeCobro(primV) : null;
-  const foto = fotoP ? await cargarFotoGrande(fotoP) : null;
-  const ancho = lado * 2 + gap, x1 = cx - ancho / 2, x2 = x1 + lado + gap;
-  if(logo) ctx.drawImage(logo, x1, y, lado, lado);
-  if(foto){
-    const esc = Math.min(lado / foto.width, lado / foto.height);
-    const fw = foto.width * esc, fh = foto.height * esc;
-    ctx.drawImage(foto, x2 + (lado - fw) / 2, y + (lado - fh) / 2, fw, fh);
-  }
-  y += lado + 12;
-  if(primV){
-    const prod = productoDeCobro(primV);
-    const nombreFoto = String((prod && prod.nombre) || primV.producto || '') + ' x' + num(primV.cantidad || 1);
-    ctx.fillStyle = '#5b5f66'; ctx.font = '22px ' + FUENTE;
-    let yn = y;
-    for(const ln of envolverTexto(ctx, nombreFoto, lado + 120)){ ctx.fillText(ln, x2 + lado / 2, yn); yn += 28; }
-    y = yn;
-  }
-  y += 18;
-  linea();
-
-  texto(titulo, 'bold 38px ' + FUENTE, '#171a21', 50);
-  y += 10;
-  ctx.textAlign = 'left'; ctx.fillStyle = '#171a21'; ctx.font = '28px ' + FUENTE;
-  ctx.fillText('Cliente: ' + (cli.nombre || ''), M, y);
-  ctx.textAlign = 'right'; ctx.fillStyle = '#8a8f99'; ctx.font = '24px ' + FUENTE;
-  ctx.fillText(fmtFechaLarga(hoyISO()), W - M, y + 3);
-  ctx.textAlign = 'center';
-  y += 54;
-
-  for(const v of pend){
-    const plan = planDeVenta(v);
-    const arr = plan.arr;
-    const cu = arr.filter(x => !x.pagada);
-    const cuota = cu[0];
-
-    // Recuadro con la FECHA + monto, y al lado el saldo pendiente
-    const boxW = 560, boxH = 176, bx = M + boxW / 2;
-    ctx.fillStyle = '#fbf4df'; ctx.fillRect(M, y, boxW, boxH);
-    ctx.strokeStyle = '#ecd9a8'; ctx.lineWidth = 3; ctx.strokeRect(M, y, boxW, boxH);
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#8a6b1e'; ctx.font = 'bold 24px ' + FUENTE;
-    // "TU PRÓXIMO PAGO" si todavía no vence; "TU PAGO DE HOY" si vence hoy; "VENCIDO" si ya pasó.
-    const baseCaja = cuota && cuota.tipo === 'prima' ? 'PRIMA' : (tienePrima ? 'ABONO' : 'PAGO');
-    let etiquetaCaja = 'TU ' + baseCaja;
-    if(cuota && cuota.vencimiento){
-      if(cuota.vencimiento === hoyStr) etiquetaCaja = 'TU ' + baseCaja + ' DE HOY';
-      else if(cuota.vencimiento > hoyStr) etiquetaCaja = (baseCaja === 'PRIMA' ? 'TU PRIMA' : 'TU PRÓXIMO ' + baseCaja);
-      else etiquetaCaja = 'TU ' + baseCaja + ' VENCIDO';
-    }
-    ctx.fillText(etiquetaCaja, bx, y + 20);
-    if(cuota){
-      ctx.fillStyle = '#171a21'; ctx.font = 'bold 34px ' + FUENTE;
-      ctx.fillText(fmtFechaLarga(cuota.vencimiento), bx, y + 56);
-      ctx.fillStyle = '#1f7a48'; ctx.font = 'bold 50px ' + FUENTE;
-      ctx.fillText(money(cuota.monto), bx, y + 104);
-    } else {
-      ctx.fillStyle = '#c0392b'; ctx.font = 'bold 48px ' + FUENTE;
-      ctx.fillText(money(num(v.saldo)), bx, y + 80);
-    }
-    const rx = M + boxW + 44;
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#8a8f99'; ctx.font = '24px ' + FUENTE;
-    ctx.fillText('Saldo pendiente:', rx, y + 48);
-    ctx.fillStyle = '#c0392b'; ctx.font = 'bold 42px ' + FUENTE;
-    ctx.fillText(money(num(v.saldo)), rx, y + 84);
-    // Abonado: el monto va en dorado; "de total" en gris.
-    const tAntes = 'Abonado ', tMonto = money(num(v.abonado)), tDespues = ' de ' + money(num(v.total));
-    ctx.font = '22px ' + FUENTE;
-    const wAntes = ctx.measureText(tAntes).width;
-    ctx.font = 'bold 22px ' + FUENTE;
-    const wMonto = ctx.measureText(tMonto).width;
-    ctx.fillStyle = '#8a8f99'; ctx.font = '22px ' + FUENTE;
-    ctx.fillText(tAntes, rx, y + 136);
-    ctx.fillStyle = '#c9a24b'; ctx.font = 'bold 22px ' + FUENTE;
-    ctx.fillText(tMonto, rx + wAntes, y + 136);
-    ctx.fillStyle = '#8a8f99'; ctx.font = '22px ' + FUENTE;
-    ctx.fillText(tDespues, rx + wAntes + wMonto, y + 136);
-    ctx.textAlign = 'center';
-    y += boxH + 26;
-
-    // Los pagos que siguen, para que el ticket muestre el plan completo
-    const siguientes = cu.slice(1);
-    if(siguientes.length){
-      ctx.textAlign = 'left';
-      let yl = y;
-      for(const x of siguientes){
-        const et = etiquetaCuota(v, arr, arr.indexOf(x));
-        ctx.fillStyle = x.tipo === 'prima' ? '#8a6b1e' : '#333a45';
-        ctx.font = (x.tipo === 'prima' ? 'bold ' : '') + '22px ' + FUENTE;
-        ctx.fillText(et + ':', M, yl);
-        ctx.textAlign = 'right';
-        ctx.fillStyle = '#5b5f66';
-        ctx.fillText(fmtFechaCorta(x.vencimiento) + ' · ' + money(x.monto), W - M, yl);
-        ctx.textAlign = 'left';
-        yl += 30;
-      }
-      y = yl + 6;
-      ctx.textAlign = 'center';
-    }
-  }
-
-  linea();
-
-  // Datos para pagar
-  if(pago){
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#c9a24b'; ctx.font = 'bold 22px ' + FUENTE;
-    ctx.fillText('Datos para pagar (SINPE):', cx, y); y += 30;
-    ctx.fillStyle = '#333a45'; ctx.font = '22px ' + FUENTE;
-    for(const ln of pago.split('\n')){ ctx.fillText(ln, cx, y); y += 28; }
-    y += 10;
-  }
-
-  // Pie
-  texto('¡Gracias por comprar en King Quepoa, tu esencia, tu estilo, tu reino!', '24px ' + FUENTE, '#8a6b1e', 36);
-
-  const H = Math.ceil(y) + 40;
-  const final = document.createElement('canvas'); final.width = W; final.height = H;
-  final.getContext('2d').drawImage(cv, 0, 0, W, H, 0, 0, W, H);
-  return await new Promise(r => final.toBlob(r, 'image/png'));
+  const sel = seleccionCobroCel(cli);
+  if(!sel.v) return null;
+  const r = await facturaCelDocumento(sel.v, 'recordatorio');
+  return r.png;
 }
 
-// Tocar el 📲 de Cobros: arma la factura del cliente (con foto y plan de pagos),
-// la copia (sin link) y abre el chat del cliente.
 async function enviarImagenCobro(c){
   const cli = clienteDeCobro(c);
   toast('🧾 Armando el recordatorio…');
   let blob = null;
+  const texto = textoCobro(cli);
   try { blob = await imagenCobro(cli); } catch(e){ blob = null; }
   const tel = (c && c.telefono) || cli.tel;
   if(!blob){
-    await copiar(textoCobro(cli), '📋 Copié el recordatorio');
-    if(tel) abrirWhatsApp('', tel);
+    await copiar(texto, '📋 Copié el recordatorio');
+    if(tel) abrirWhatsApp(texto, tel);
     return;
   }
-  await entregarImagen(blob, '🧾 Recordatorio copiado — pegalo en el chat');
-  if(tel) setTimeout(() => abrirWhatsApp('', tel), 700);
+  await entregarImagen(blob, '🧾 Recordatorio copiado — pegalo en el chat', texto);
+  if(tel) setTimeout(() => abrirWhatsApp(texto, tel), 700);
 }
 
 async function enviarFacturaLocal(v){
-  const c = cobroLocal(v);
-  if(!c || num(c.saldo) <= 0.5) return toast('Esa venta no tiene saldo pendiente', 'error');
-  await enviarImagenCobro(c);
+  toast('🧾 Armando la factura…');
+  try {
+    const r = await facturaCelDocumento(v, 'factura');
+    await entregarImagen(r.png, '🧾 Factura copiada — pegala en el chat', r.texto);
+    if(v.telefono) setTimeout(() => abrirWhatsApp(r.texto, v.telefono), 700);
+  } catch(e){
+    toast('No pude armar la factura: ' + e.message, 'error');
+  }
 }
 
 function abrirProducto(p){
@@ -1819,35 +1929,11 @@ async function cargarCostos(mostrar){
 let cobrosError = '';
 
 function textoCobro(c){
-  const cli = (c && c.ventas) ? c : { nombre: (c && c.cliente) || '', ventas: c ? [c] : [] };
-  const cfg = datos.config || {};
-  const pago = String(cfg.datos_pago || '').trim();
-  const pend = (cli.ventas || []).filter(v => num(v.saldo) > 0.5);
-  const bloques = [];
-  for(const v of pend){
-    const plan = planDeVenta(v);
-    const arr = plan.arr;
-    const cu = arr.filter(x => !x.pagada);
-    const prod = `📦 *${v.producto || 'tu perfume'}*${num(v.cantidad) > 1 ? ' ×' + num(v.cantidad) : ''}`;
-    if(cu.length){
-      const lineas = cu.map(x => {
-        const et = plan.completo ? etiquetaCuota(v, arr, arr.indexOf(x)).toLowerCase() : 'próximo pago';
-        return `• *${et}* — ${fmtFechaLarga(x.vencimiento)}: *${money(x.monto)}*`;
-      });
-      const extra = plan.completo ? '' : `\nSaldo pendiente: *${money(v.saldo)}*`;
-      bloques.push(`${prod}\n${lineas.join('\n')}${extra}`);
-    } else {
-      bloques.push(`${prod}\nSaldo pendiente: *${money(v.saldo)}*`);
-    }
-  }
-  const total = pend.reduce((s, v) => s + num(v.saldo), 0);
-  let t = `¡Hola ${primerNombreDe(cli.nombre)}! ¿Cómo estás? 👋\n`;
-  t += `Te escribimos de *King Quepoa Perfumería* 🧴\n\n`;
-  t += bloques.length ? bloques.join('\n\n') : `Tenés un saldo de *${money(total)}*.`;
-  t += `\n\n💳 Podés hacer el pago por *SINPE Móvil*`;
-  if(pago) t += `:\n${pago}`;
-  t += `\n\n¡Gracias por comprar en King Quepoa, tu esencia, tu estilo, tu reino! ✨`;
-  return t;
+  const sel = seleccionCobroCel(c);
+  if(sel.v) return textoCobroCel(sel.v);
+  const cli = (c && c.ventas) ? c : { nombre: (c && (c.cliente || c.nombre)) || '', ventas: c ? [c] : [] };
+  const total = (cli.ventas || []).reduce((s, v) => s + num(v.saldo), 0);
+  return `¡Hola ${primerNombreDe(cli.nombre)}! 👋\nTenés un saldo pendiente de ${money(total)}.`;
 }
 
 async function cargarCobros(mostrar){
