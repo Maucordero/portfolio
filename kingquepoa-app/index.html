@@ -947,11 +947,12 @@ async function facturaCelDocumento(v, tipo){
     precio_unitario_crc: precioContadoCel(v),
   };
   const proforma = tipo === 'proforma';
+  const numBase = (v.venta_id && !String(v.venta_id).startsWith('local-')) ? v.venta_id : v.id;
   const opts = {
     proforma,
     pagada: tipo === 'recordatorio' ? false : info.pagada,
     titulo: proforma ? 'PROFORMA' : (tipo === 'recordatorio' ? 'RECORDATORIO DE PAGO' : 'FACTURA'),
-    numero: (v.venta_id || v.id) ? 'KQ' + String(v.venta_id || v.id).padStart(5, '0') : undefined,
+    numero: numBase ? 'KQ' + String(numBase).padStart(5, '0') : undefined,
     terminos: info.terminos,
     cuotas: info.filas,
     vencimiento: info.vencimiento,
