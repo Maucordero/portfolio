@@ -2426,7 +2426,7 @@ function filaCobradoCel(v){
       <div class="fila" style="margin-top:4px;gap:6px;flex-wrap:wrap">
         <span class="tag" style="color:var(--green);border-color:rgba(62,207,142,.35)">Pagada</span>
         <span class="tag">Cobrado ${money(v.cobrado)}</span>
-        ${v.pendiente ? '<span class="tag" style="color:var(--gold2)">⏳ esperando PC</span>' : ''}
+        
       </div>
     </div>
     <div style="display:flex;flex-direction:column;gap:8px;align-items:center;align-self:center">
@@ -2534,7 +2534,7 @@ function pintarCobros(app){
           </div>
           <div class="fila" style="margin-top:4px;gap:6px;flex-wrap:wrap">
             <span class="tag">Abonado ${money(c.abonado)} de ${money(c.total)}</span>
-            ${esLocal ? '<span class="tag" style="color:var(--gold2)">⏳ esperando PC</span>' : ''}
+
           </div>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;align-items:center;align-self:center">
@@ -3037,7 +3037,7 @@ function pintarPromoLista(){
     ? promoVisible.map((f, i) => `<div class="card" style="margin:0 0 8px;padding:10px 12px">
         <div style="display:flex;align-items:center;gap:8px">
           <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:14px">${esc(f.nombre)} ${f.espera ? '<span style="font-size:11px;color:var(--gold2);font-weight:400">⏳ esperando PC</span>' : ''}</div>
+            <div style="font-weight:700;font-size:14px">${esc(f.nombre)}</div>
             <div style="font-size:12px;color:var(--muted)">${f.tel ? esc(f.tel) : 'Sin teléfono'}${f.creado ? ' · ' + esc(fmtFechaCorta(f.creado)) : ''}</div>
             ${f.nota ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(f.nota)}</div>` : ''}
           </div>
@@ -3182,7 +3182,7 @@ function pintarNumeros(app){
           </div>
           <div class="fila" style="margin-top:4px;gap:6px;flex-wrap:wrap">
             ${estado(v)}
-            ${v.pendiente ? '<span class="tag" style="color:var(--gold2)">⏳ esperando PC</span>' : ''}
+            
             <span class="tag">Cobrado ${money(v.cobrado)}</span>
             ${num(v.saldo) > 0.5 ? `<span class="tag" style="color:var(--red)">Saldo ${money(v.saldo)}</span>` : ''}
           </div>
