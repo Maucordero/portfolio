@@ -266,11 +266,12 @@ const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZ
 const VERSION = '1.18.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
-const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1' };
+const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1' };
 
 let datos = { inventario:[], config:{}, guardado:null };
 let cobros = [];
 let cobrosFiltro = 'porcobrar';
+let abonosPendientes = [];
 let nums = null, numsError = '', numsFiltro = 'todas', cargandoNums = false;
 let costos = null, costosError = '', cargandoCostos = false;
 let cotizacionesTmp = [];
@@ -2024,6 +2025,34 @@ function textoCobro(c){
   return `¡Hola ${primerNombreDe(cli.nombre)}! 👋\nTenés un saldo pendiente de ${money(total)}.`;
 }
 
+// Mientras la PC no aplica un abono, Google todavía muestra el saldo viejo.
+// Esto descuenta los abonos recién hechos para que la venta no reaparezca
+// en Por cobrar después de haberla cobrado.
+function aplicarAbonosPendientes(lista){
+  if(!abonosPendientes.length) return lista;
+  const ahora = Date.now();
+  const out = [];
+  const quedan = [];
+  for(const c of lista){
+    const pend = abonosPendientes.filter(a => String(a.venta_id) === String(c.venta_id));
+    if(!pend.length){ out.push(c); continue; }
+    const noAplicados = pend.filter(a => !(num(c.saldo) <= num(a.saldoAntes) - num(a.monto) + 0.5));
+    if(!noAplicados.length){ out.push(c); continue; }  // la PC ya lo aplicó
+    const total = noAplicados.reduce((s,a) => s + num(a.monto), 0);
+    const saldo = Math.max(0, num(c.saldo) - total);
+    if(saldo > 0.5){
+      out.push(Object.assign({}, c, { saldo, abonado: num(c.abonado) + total }));
+      quedan.push(...noAplicados);
+    }
+  }
+  for(const a of abonosPendientes){
+    if(!lista.some(c => String(c.venta_id) === String(a.venta_id))) quedan.push(a);
+  }
+  abonosPendientes = quedan.filter(a => ahora - a.ts < 30 * 60 * 1000);
+  guardarLS(LS.abonosPend, abonosPendientes);
+  return out;
+}
+
 async function cargarCobros(mostrar){
   const t = token();
   if(!t){ if(mostrar) toast('Falta la clave en Ajustes', 'error'); return; }
@@ -2039,6 +2068,7 @@ async function cargarCobros(mostrar){
     const j = await rc.value.json();
     if(!j || !j.ok) throw new Error((j && j.error) || 'No se pudo leer la lista');
     cobros = Array.isArray(j.cobros) ? j.cobros : [];
+    cobros = aplicarAbonosPendientes(cobros);
     cobrosError = '';
     guardarLS(LS.cobros, { cobros, guardado: Date.now() });
     if(rn.status === 'fulfilled'){
@@ -2264,7 +2294,10 @@ function mostrarCobroPagado(c, monto){
     const x = $('#cb-confirmacion'); if(x) x.style.display = 'none';
   }, 60000);
   const bg = $('#cb-gracias-pagada');
-  if(bg) bg.onclick = () => enviarGraciasCel({ cliente: c.cliente, telefono: c.telefono, perfume: c.producto, cantidad: c.cantidad });
+  if(bg) bg.onclick = async () => {
+    await enviarGraciasCel({ cliente: c.cliente, telefono: c.telefono, perfume: c.producto, cantidad: c.cantidad });
+    el.style.display = 'none';
+  };
   const bc = $('#cb-cerrar-pagada');
   if(bc) bc.onclick = () => { el.style.display = 'none'; };
 }
@@ -2280,7 +2313,7 @@ function programarRefrescoCobros(intentos = 0){
       return;
     }
     cargarCobros(false);
-  }, 15000);
+  }, 25000);
 }
 
 function abrirAbono(c){
@@ -2343,6 +2376,10 @@ function abrirAbono(c){
       if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó el abono');
       cerrar();
       const restante = Math.max(0, saldo - monto);
+      // Guarda el abono como pendiente hasta que la PC lo refleje en COBROS,
+      // así la venta no reaparece con el saldo viejo al refrescar.
+      abonosPendientes.push({ venta_id: Number(c.venta_id), monto, saldoAntes: saldo, ts: Date.now() });
+      guardarLS(LS.abonosPend, abonosPendientes);
       // Refleja el abono de inmediato en el teléfono: si terminó de pagar,
       // la venta sale de Por cobrar y se ofrece el agradecimiento en el acto.
       const idx = cobros.findIndex(x => String(x.venta_id) === String(c.venta_id));
@@ -3358,6 +3395,7 @@ function pintarAjustes(app){
       localStorage.removeItem(LS.datos);
       localStorage.removeItem(LS.notas);
       localStorage.removeItem(LS.cobros);
+      localStorage.removeItem(LS.abonosPend);
       localStorage.removeItem(LS.numeros);
       localStorage.removeItem(LS.costos);
       localStorage.removeItem(LS.porComprar);
@@ -3431,6 +3469,9 @@ document.addEventListener('click', ev => {
 
   const gc = leerLS(LS.cobros, null);
   if(gc && Array.isArray(gc.cobros)) cobros = gc.cobros;
+
+  abonosPendientes = leerLS(LS.abonosPend, []);
+  if(!Array.isArray(abonosPendientes)) abonosPendientes = [];
 
   const gn = leerLS(LS.numeros, null);
   if(gn && gn.nums) nums = gn.nums;
