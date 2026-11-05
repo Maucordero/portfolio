@@ -2078,8 +2078,12 @@ async function cargarCobros(mostrar){
           nums = jn.numeros;
           numsError = '';
           guardarLS(LS.numeros, { nums: nums, guardado: Date.now() });
+        } else {
+          numsError = 'No se pudieron leer las ventas cobradas.';
         }
-      } catch(_) { /* si falla Números, Cobros igual funciona */ }
+      } catch(_) { numsError = 'No se pudieron leer las ventas cobradas.'; }
+    } else {
+      numsError = 'No se pudieron leer las ventas cobradas.';
     }
     if(vista === 'cobros') render();
     if(mostrar) toast('Cobros actualizados');
@@ -2170,7 +2174,7 @@ function pintarCobros(app){
     </div>
     ${!esCobrados && atras ? `<div class="aviso">⚠️ ${atras} con abono vencido. Tocalo para mandarle el recordatorio.</div>` : ''}
     ${cobrosError ? `<div class="aviso">${esc(cobrosError)}</div>` : ''}
-    ${esCobrados && !nums ? `<div class="aviso">Cargando las ventas cobradas…</div>` : ''}
+    ${esCobrados && !nums ? `<div class="aviso">${numsError ? esc(numsError) : 'Cargando las ventas cobradas…'}</div>` : ''}
     <div class="buscador"><span>🔍</span><input id="cb-q" placeholder="Buscar cliente o perfume…" autocomplete="off"></div>
     <div id="cb-confirmacion" class="aviso ok" style="display:none"></div>
     <div id="cb-lista"></div>`;
