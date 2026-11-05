@@ -258,6 +258,7 @@
   <button data-v="vender" class="oculto"><i>🛒</i><span>Vender</span></button>
   <button data-v="cobros" class="oculto"><i>💰</i><span>Cobros</span></button>
   <button data-v="numeros" class="oculto"><i>📊</i><span>Números</span></button>
+  <button data-v="promo" class="oculto"><i>📇</i><span>Promo</span></button>
   <button data-v="cotizar" class="oculto"><i>🧮</i><span>Cotizar</span></button>
   <button data-v="ajustes" class="oculto"><i>⚙️</i><span>Ajustes</span></button>
 </nav>
@@ -274,10 +275,10 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.23.0';
+const VERSION = '1.24.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
-const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1' };
+const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1', promo:'kq_promo_v1' };
 
 let datos = { inventario:[], config:{}, guardado:null };
 let cobros = [];
@@ -437,7 +438,7 @@ function guardarAbonosOn(v){
 /* ---------------- roles: dueño vs visitante ---------------- */
 function aplicarRol(){
   const dueno = esDueno();
-  const privadas = ['vender','cobros','numeros','cotizar','ajustes'];
+  const privadas = ['vender','cobros','numeros','promo','cotizar','ajustes'];
   let visibles = 0;
   document.querySelectorAll('nav button').forEach(b => {
     const ocultar = !dueno && privadas.indexOf(b.dataset.v) !== -1;
@@ -598,6 +599,7 @@ function render(){
   if(vista === 'vender') return pintarVender(app);
   if(vista === 'cobros') return pintarCobros(app);
   if(vista === 'numeros') return pintarNumeros(app);
+  if(vista === 'promo') return pintarPromo(app);
   if(vista === 'cotizar') return pintarCotizar(app);
   if(vista === 'catalogo') return pintarCatalogo(app);
   if(vista === 'ajustes') return pintarAjustes(app);
@@ -2956,6 +2958,122 @@ async function enviarGraciasAutomatica(v){
   return true;
 }
 
+/* ---------------- promoción: clientes potenciales ---------------- */
+let promo = null, promoError = '', cargandoPromo = false, promoFiltro = '', promoVisible = [];
+
+function promoSoloDig(s){ return String(s || '').replace(/\D/g, ''); }
+function promoSinAcento(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(); }
+
+// Lista de la PC + las ventas del celular que todavía la PC no aplicó (⏳).
+function promoListaCel(){
+  const filas = [];
+  const yaEsta = (nombre, tel) => filas.some(f =>
+    (promoSoloDig(tel).length > 5 && promoSoloDig(f.tel) === promoSoloDig(tel)) ||
+    promoSinAcento(f.nombre) === promoSinAcento(nombre));
+  for(const v of ventasLocales()){
+    const nombre = String(v.cliente || '').trim();
+    if(!nombre || yaEsta(nombre, v.telefono)) continue;
+    filas.push({ id: 'loc-' + v.id, nombre, tel: v.telefono || '', nota: 'Compró: ' + (v.perfume || ''), creado: v.fecha_venta || '', espera: true });
+  }
+  for(const p of (Array.isArray(promo) ? promo : [])){
+    const nombre = String(p.nombre || '').trim();
+    if(!nombre || yaEsta(nombre, p.tel)) continue;
+    filas.push({ id: p.id, nombre, tel: p.tel || '', nota: p.nota || '', creado: p.creado || '', espera: false });
+  }
+  return filas;
+}
+
+async function cargarPromo(mostrar){
+  const t = token();
+  if(!t){ if(mostrar) toast('Falta la clave en Acceso', 'error'); return; }
+  if(cargandoPromo) return;
+  cargandoPromo = true;
+  if(mostrar) toast('Actualizando…');
+  try {
+    const r = await fetch(API + '?action=promocion&token=' + encodeURIComponent(t) + '&t=' + Date.now());
+    const j = await r.json();
+    if(!j || !j.ok) throw new Error((j && j.error) || 'No se pudo leer Promoción');
+    promo = Array.isArray(j.promocion) ? j.promocion : [];
+    promoError = '';
+    guardarLS(LS.promo, { promo, guardado: Date.now() });
+    if(vista === 'promo') render();
+    if(mostrar) toast('Promoción actualizada');
+  } catch(e) {
+    promoError = /desconocida/i.test(e.message)
+      ? 'Falta actualizar el script de Google (versión 1.6).'
+      : (e.message || 'Sin señal');
+    if(vista === 'promo') render();
+    if(mostrar) toast(promoError, 'error');
+  } finally {
+    cargandoPromo = false;
+  }
+}
+
+function pintarPromoLista(){
+  const q = promoSinAcento(promoFiltro);
+  promoVisible = promoListaCel().filter(f => !q || promoSinAcento(f.nombre + ' ' + f.tel + ' ' + f.nota).includes(q));
+  const el = $('#pr-lista');
+  if(!el) return;
+  el.innerHTML = promoVisible.length
+    ? promoVisible.map((f, i) => `<div class="card" style="margin:0 0 8px;padding:10px 12px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:14px">${esc(f.nombre)} ${f.espera ? '<span style="font-size:11px;color:var(--gold2);font-weight:400">⏳ esperando PC</span>' : ''}</div>
+            <div style="font-size:12px;color:var(--muted)">${f.tel ? esc(f.tel) : 'Sin teléfono'}${f.creado ? ' · ' + esc(fmtFechaCorta(f.creado)) : ''}</div>
+            ${f.nota ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(f.nota)}</div>` : ''}
+          </div>
+          <button class="btn ghost sm" data-wa="${i}" ${promoSoloDig(f.tel).length < 8 ? 'disabled' : ''}>💬</button>
+        </div>
+      </div>`).join('')
+    : `<p class="hint" style="margin:8px 0">${q ? 'No encontré ese cliente.' : 'Todavía no hay clientes en Promoción.'}</p>`;
+}
+
+function pintarPromo(app){
+  if(!token()){
+    app.innerHTML = `<div class="card">
+      <h3>Promoción</h3>
+      <p class="hint" style="margin:8px 0 14px">Esta sección es privada: entra con la clave del dueño.</p>
+      <button class="btn" id="pr-ir">Ir a Ajustes</button>
+    </div>`;
+    $('#pr-ir').onclick = () => { vista = 'ajustes'; render(); };
+    return;
+  }
+
+  if(!promo){
+    const cache = leerLS(LS.promo, null);
+    if(cache && Array.isArray(cache.promo)) promo = cache.promo;
+  }
+  if(!promo){
+    if(!promoError) setTimeout(() => cargarPromo(false), 80);
+    app.innerHTML = `<div class="card">
+      <h3>Promoción</h3>
+      ${promoError
+        ? `<div class="aviso" style="margin:8px 0 10px">${esc(promoError)}</div>`
+        : `<p class="hint" style="margin:8px 0 12px">Cargando clientes…</p>`}
+      <button class="btn ghost" id="pr-ref">⟳ Actualizar</button>
+    </div>`;
+    $('#pr-ref').onclick = () => cargarPromo(true);
+    return;
+  }
+
+  app.innerHTML = `<div class="card">
+    <h3>Promoción</h3>
+    <p class="hint" style="margin:6px 0 10px">Clientes para futuras ventas. Tocá 💬 para escribirles. Los ⏳ son de tus ventas del celular que la PC todavía no aplicó.</p>
+    <div class="buscador"><span>🔍</span><input id="pr-q" placeholder="Buscar cliente…" value="${esc(promoFiltro)}" autocomplete="off"></div>
+    <div style="display:flex;justify-content:flex-end;margin:8px 0"><button class="btn ghost sm" id="pr-ref">⟳ Actualizar</button></div>
+    <div id="pr-lista"></div>
+  </div>`;
+  $('#pr-q').addEventListener('input', e => { promoFiltro = e.target.value; pintarPromoLista(); });
+  $('#pr-ref').onclick = () => cargarPromo(true);
+  $('#pr-lista').onclick = e => {
+    const b = e.target.closest('[data-wa]');
+    if(!b) return;
+    const f = promoVisible[Number(b.dataset.wa)];
+    if(f) abrirWhatsApp('', f.tel);
+  };
+  pintarPromoLista();
+}
+
 function cajaNum(etiqueta, valor, color){
   return `<div style="background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px">
     <div style="font-size:10.5px;letter-spacing:.05em;color:var(--muted);text-transform:uppercase">${etiqueta}</div>
@@ -3901,6 +4019,7 @@ document.querySelectorAll('nav button').forEach(b => {
     if(vista === 'stock' && token()) refrescarEstadoVentas();
     if(vista === 'cobros'){ refrescarEstadoVentas(); cargarCobros(false); }
     if(vista === 'numeros'){ refrescarEstadoVentas(); cargarNumeros(false); }
+    if(vista === 'promo') cargarPromo(false);
     window.scrollTo(0,0);
   });
 });
