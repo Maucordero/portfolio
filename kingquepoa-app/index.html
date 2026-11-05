@@ -263,13 +263,14 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.17.0';
+const VERSION = '1.18.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1' };
 
 let datos = { inventario:[], config:{}, guardado:null };
 let cobros = [];
+let cobrosFiltro = 'porcobrar';
 let nums = null, numsError = '', numsFiltro = 'todas', cargandoNums = false;
 let costos = null, costosError = '', cargandoCostos = false;
 let cotizacionesTmp = [];
@@ -2028,12 +2029,28 @@ async function cargarCobros(mostrar){
   if(!t){ if(mostrar) toast('Falta la clave en Ajustes', 'error'); return; }
   if(mostrar) toast('Actualizando…');
   try {
-    const r = await fetch(API + '?action=cobros&token=' + encodeURIComponent(t) + '&t=' + Date.now());
-    const j = await r.json();
+    // Cobros (pendientes) y Números (historial, para la pestaña Cobrados).
+    // Se piden juntos para que al terminar un cobro la venta pase de lado sola.
+    const [rc, rn] = await Promise.allSettled([
+      fetch(API + '?action=cobros&token=' + encodeURIComponent(t) + '&t=' + Date.now()),
+      fetch(API + '?action=numeros&token=' + encodeURIComponent(t) + '&t=' + Date.now())
+    ]);
+    if(rc.status !== 'fulfilled') throw (rc.reason || new Error('Sin señal'));
+    const j = await rc.value.json();
     if(!j || !j.ok) throw new Error((j && j.error) || 'No se pudo leer la lista');
     cobros = Array.isArray(j.cobros) ? j.cobros : [];
     cobrosError = '';
     guardarLS(LS.cobros, { cobros, guardado: Date.now() });
+    if(rn.status === 'fulfilled'){
+      try {
+        const jn = await rn.value.json();
+        if(jn && jn.ok && jn.numeros){
+          nums = jn.numeros;
+          numsError = '';
+          guardarLS(LS.numeros, { nums: nums, guardado: Date.now() });
+        }
+      } catch(_) { /* si falla Números, Cobros igual funciona */ }
+    }
     if(vista === 'cobros') render();
     if(mostrar) toast('Cobros actualizados');
   } catch(e) {
@@ -2043,6 +2060,44 @@ async function cargarCobros(mostrar){
     if(vista === 'cobros') render();
     if(mostrar) toast(cobrosError, 'error');
   }
+}
+
+// Ventas ya pagadas: las oficiales vienen en NUMEROS.ventas y las del teléfono
+// que todavía no aplicó la PC se sacan de la copia local.
+function ventasCobradasCel(){
+  const base = (nums && Array.isArray(nums.ventas)) ? nums.ventas : [];
+  const oficiales = base.filter(v => num(v.saldo) <= 0.5);
+  const locales = ventasLocales()
+    .filter(v => v.estado !== 'confirmada')
+    .map(ventaLocalANum)
+    .filter(v => num(v.saldo) <= 0.5 && !oficiales.some(g => mismaVentaNum(v, g)));
+  return [...locales, ...oficiales];
+}
+
+function filaCobradoCel(v){
+  const fecha = v.fecha ? String(v.fecha).slice(0,10).split('-').reverse().join('/') : '';
+  const cant = num(v.cantidad) > 1 ? ' · ' + num(v.cantidad) + ' u.' : '';
+  const telOk = String(v.telefono || '').replace(/\D/g,'').length >= 8;
+  return `<div class="prod" style="cursor:default">
+    <div class="foto" style="font-size:20px">✅</div>
+    <div class="info">
+      <div class="nom" style="color:var(--green)">${esc(v.cliente)}</div>
+      <div class="mar">${esc(v.perfume || '')}${cant}</div>
+      <div class="fila">
+        <span class="precio">${money(v.total)}</span>
+        <span class="pagos">${fecha}</span>
+      </div>
+      <div class="fila" style="margin-top:4px;gap:6px;flex-wrap:wrap">
+        <span class="tag" style="color:var(--green);border-color:rgba(62,207,142,.35)">Pagada</span>
+        <span class="tag">Cobrado ${money(v.cobrado)}</span>
+        ${v.pendiente ? '<span class="tag" style="color:var(--gold2)">⏳ esperando PC</span>' : ''}
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;align-items:center;align-self:center">
+      ${telOk ? `<span data-gracias-cobrado="${esc(v.id)}" style="font-size:20px;color:var(--gold2);cursor:pointer" title="Mandar agradecimiento">🙏</span>` : ''}
+      ${v.local && v.pendiente ? `<span data-factura-cobrado="${esc(v.id)}" style="font-size:18px;color:var(--green);cursor:pointer" title="Factura">📲</span>` : ''}
+    </div>
+  </div>`;
 }
 
 function pintarCobros(app){
@@ -2056,51 +2111,75 @@ function pintarCobros(app){
     return;
   }
 
-  const todos = cobrosTodos();
-  if(!todos.length){
-    if(cobrosError){
-      app.innerHTML = `<div class="card">
-        <h3>Clientes que deben</h3>
-        <p class="hint" style="margin:8px 0 14px">${esc(cobrosError)}</p>
-        <button class="btn ghost" id="cb-ref">⟳ Reintentar</button>
-      </div>`;
-      $('#cb-ref').onclick = () => cargarCobros(true);
-      return;
-    }
-    app.innerHTML = `<div class="vacio"><span class="em">✅</span>No hay clientes con saldo pendiente.
-      <div style="font-size:12.5px;margin-top:6px">Si acabás de cobrar, actualizá la lista.</div></div>
-      <button class="btn ghost" id="cb-ref">⟳ Actualizar</button>`;
-    $('#cb-ref').onclick = () => cargarCobros(true);
-    return;
-  }
-
-  const total = todos.reduce((s,c) => s + num(c.saldo), 0);
-  const atras = todos.filter(c => num(c.atrasado) === 1).length;
+  const pendientes = cobrosTodos();
+  const cobrados = ventasCobradasCel();
+  const esCobrados = cobrosFiltro === 'cobrados';
+  const base = esCobrados ? cobrados : pendientes;
+  const totalPend = pendientes.reduce((s,c) => s + num(c.saldo), 0);
+  const totalCob = cobrados.reduce((s,c) => s + num(c.cobrado), 0);
+  const atras = pendientes.filter(c => num(c.atrasado) === 1).length;
 
   app.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <h3 style="margin:0;flex:1">Cobros</h3>
+      <button class="btn ghost sm" id="cb-ref" title="Actualizar">⟳</button>
+    </div>
     <div class="card" style="display:flex;gap:10px;align-items:center">
       <div style="flex:1">
-        <small class="muted" style="font-size:11px;letter-spacing:.08em">TOTAL POR COBRAR</small>
-        <div style="font-size:23px;font-weight:700;color:var(--gold2);line-height:1.2">${money(total)}</div>
+        <small class="muted" style="font-size:11px;letter-spacing:.08em">${esCobrados ? 'TOTAL COBRADO' : 'TOTAL POR COBRAR'}</small>
+        <div style="font-size:23px;font-weight:700;color:${esCobrados ? 'var(--green)' : 'var(--gold2)'};line-height:1.2">${money(esCobrados ? totalCob : totalPend)}</div>
       </div>
       <div style="text-align:right">
-        <small class="muted" style="font-size:11px;letter-spacing:.08em">COBROS</small>
-        <div style="font-size:23px;font-weight:700;line-height:1.2">${todos.length}</div>
+        <small class="muted" style="font-size:11px;letter-spacing:.08em">${esCobrados ? 'COBRADOS' : 'COBROS'}</small>
+        <div style="font-size:23px;font-weight:700;line-height:1.2">${base.length}</div>
       </div>
     </div>
-    ${atras ? `<div class="aviso">⚠️ ${atras} con abono vencido. Tocalo para mandarle el recordatorio.</div>` : ''}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0 10px">
+      <button class="btn ${esCobrados ? 'ghost' : ''} sm" data-cb-f="porcobrar">Por cobrar ${pendientes.length}</button>
+      <button class="btn ${esCobrados ? '' : 'ghost'} sm" data-cb-f="cobrados">Cobrados ${cobrados.length}</button>
+    </div>
+    ${!esCobrados && atras ? `<div class="aviso">⚠️ ${atras} con abono vencido. Tocalo para mandarle el recordatorio.</div>` : ''}
     ${cobrosError ? `<div class="aviso">${esc(cobrosError)}</div>` : ''}
+    ${esCobrados && !nums ? `<div class="aviso">Cargando las ventas cobradas…</div>` : ''}
     <div class="buscador"><span>🔍</span><input id="cb-q" placeholder="Buscar cliente o perfume…" autocomplete="off"></div>
     <div id="cb-confirmacion" class="aviso ok" style="display:none"></div>
     <div id="cb-lista"></div>`;
 
   const pintar = () => {
     const q = norm($('#cb-q').value);
-    const lista = todos.filter(c =>
-      !q || norm(c.cliente).includes(q) || norm(c.producto).includes(q));
+    const lista = base.filter(c =>
+      !q || norm(c.cliente).includes(q) || norm(c.producto || c.perfume).includes(q));
     const cont = $('#cb-lista');
     if(!lista.length){
-      cont.innerHTML = `<div class="vacio"><span class="em">🔍</span>No encontré ese cliente.</div>`;
+      const em = esCobrados ? '✅' : '🔍';
+      const txt = esCobrados
+        ? 'Todavía no hay ventas cobradas.'
+        : (q ? 'No encontré ese cliente.' : 'No hay clientes con saldo pendiente.');
+      cont.innerHTML = `<div class="vacio"><span class="em">${em}</span>${txt}</div>`;
+      return;
+    }
+    if(esCobrados){
+      cont.innerHTML = lista.map(filaCobradoCel).join('');
+      cont.querySelectorAll('[data-gracias-cobrado]').forEach(el => {
+        el.addEventListener('click', async ev => {
+          ev.stopPropagation();
+          const id = el.dataset.graciasCobrado;
+          let v = cobrados.find(x => String(x.id) === id);
+          if(!v && String(id).startsWith('local-')){
+            const l = ventasLocales().find(x => ('local-' + x.id) === id);
+            if(l) v = ventaLocalANum(l);
+          }
+          if(v) await enviarGraciasCel(v);
+        });
+      });
+      cont.querySelectorAll('[data-factura-cobrado]').forEach(el => {
+        el.addEventListener('click', async ev => {
+          ev.stopPropagation();
+          const id = el.dataset.facturaCobrado;
+          const l = ventasLocales().find(x => ('local-' + x.id) === id);
+          if(l) await enviarFacturaLocal(l);
+        });
+      });
       return;
     }
     cont.innerHTML = lista.map(c => {
@@ -2144,6 +2223,15 @@ function pintarCobros(app){
     });
   };
 
+  app.querySelectorAll('[data-cb-f]').forEach(b => {
+    b.onclick = () => {
+      cobrosFiltro = b.dataset.cbF;
+      if(cobrosFiltro === 'cobrados' && !nums) cargarNumeros(false);
+      render();
+    };
+  });
+  const ref = $('#cb-ref');
+  if(ref) ref.onclick = () => { cargarCobros(true); if(!nums) cargarNumeros(false); };
   $('#cb-q').addEventListener('input', pintar);
   pintar();
 }
@@ -2157,6 +2245,42 @@ function mostrarConfirmacionCobro(txt){
   window._confCobroTimer = setTimeout(() => {
     const x = $('#cb-confirmacion'); if(x) x.style.display = 'none';
   }, 60000);
+}
+
+// Al terminar de pagar: aviso inmediato + agradecimiento sin esperar a la PC.
+function mostrarCobroPagado(c, monto){
+  const el = $('#cb-confirmacion');
+  if(!el) return;
+  const telOk = String(c.telefono || '').replace(/\D/g,'').length >= 8;
+  el.innerHTML = `<div>✅ Pago de ${money(monto)} registrado · ${esc(c.cliente)}</div>
+    <div style="font-size:12px;margin-top:4px">🎉 La venta quedó <b>pagada</b>. Mandale el agradecimiento ahora.</div>
+    <div class="acciones" style="margin-top:8px;justify-content:flex-end;gap:8px;flex-wrap:wrap">
+      ${telOk ? '<button class="btn sm" id="cb-gracias-pagada">🙏 Agradecimiento</button>' : ''}
+      <button class="btn ghost sm" id="cb-cerrar-pagada">Cerrar</button>
+    </div>`;
+  el.style.display = '';
+  clearTimeout(window._confCobroTimer);
+  window._confCobroTimer = setTimeout(() => {
+    const x = $('#cb-confirmacion'); if(x) x.style.display = 'none';
+  }, 60000);
+  const bg = $('#cb-gracias-pagada');
+  if(bg) bg.onclick = () => enviarGraciasCel({ cliente: c.cliente, telefono: c.telefono, perfume: c.producto, cantidad: c.cantidad });
+  const bc = $('#cb-cerrar-pagada');
+  if(bc) bc.onclick = () => { el.style.display = 'none'; };
+}
+
+// Refresca Cobros cuando el aviso ya se cerró (o a los 90 s como máximo),
+// para que la venta aparezca en Cobrados sin borrar el agradecimiento.
+function programarRefrescoCobros(intentos = 0){
+  setTimeout(() => {
+    if(vista !== 'cobros') return;
+    const el = $('#cb-confirmacion');
+    if(el && el.style.display !== 'none' && intentos < 6){
+      programarRefrescoCobros(intentos + 1);
+      return;
+    }
+    cargarCobros(false);
+  }, 15000);
 }
 
 function abrirAbono(c){
@@ -2218,8 +2342,20 @@ function abrirAbono(c){
       const j = await r.json();
       if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó el abono');
       cerrar();
-      mostrarConfirmacionCobro(`✅ Abono de ${money(monto)} anotado · ${c.cliente}`);
-      setTimeout(() => { if(vista === 'cobros') cargarCobros(false); }, 62000);
+      const restante = Math.max(0, saldo - monto);
+      // Refleja el abono de inmediato en el teléfono: si terminó de pagar,
+      // la venta sale de Por cobrar y se ofrece el agradecimiento en el acto.
+      const idx = cobros.findIndex(x => String(x.venta_id) === String(c.venta_id));
+      if(idx >= 0){
+        if(restante <= 0.5) cobros.splice(idx, 1);
+        else cobros[idx] = Object.assign({}, cobros[idx], { saldo: restante, abonado: num(cobros[idx].abonado) + monto });
+        guardarLS(LS.cobros, { cobros, guardado: Date.now() });
+      }
+      if(vista === 'cobros') render();
+      if(restante <= 0.5) mostrarCobroPagado(c, monto);
+      else mostrarConfirmacionCobro(`✅ Abono de ${money(monto)} anotado · ${c.cliente} · Saldo ${money(restante)}`);
+      // La PC aplica el abono en segundos; refrescamos para que pase a Cobrados.
+      programarRefrescoCobros();
     } catch(e){
       toast(e.message || 'No se pudo registrar', 'error');
       btn.disabled = false; btn.textContent = 'Registrar abono';
@@ -2241,13 +2377,13 @@ async function cargarNumeros(mostrar){
     nums = j.numeros || null;
     numsError = '';
     guardarLS(LS.numeros, { nums: nums, guardado: Date.now() });
-    if(vista === 'numeros') render();
+    if(vista === 'numeros' || vista === 'cobros') render();
     if(mostrar) toast('Números actualizados');
   } catch(e) {
     numsError = /desconocida/i.test(e.message)
       ? 'Falta actualizar el script de Google (versión 1.5).'
       : (e.message || 'Sin señal');
-    if(vista === 'numeros') render();
+    if(vista === 'numeros' || vista === 'cobros') render();
     if(mostrar) toast(numsError, 'error');
   } finally {
     cargandoNums = false;
