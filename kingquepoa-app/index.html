@@ -274,7 +274,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.19.0';
+const VERSION = '1.20.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1' };
@@ -570,7 +570,8 @@ function telCR(tel){
 function abrirWhatsApp(texto, tel){
   const t = telCR(tel);
   const url = 'https://wa.me/' + (t || '') + '?text=' + encodeURIComponent(texto);
-  window.open(url, '_blank');
+  const w = window.open(url, '_blank');
+  if(!w) location.href = url;   // si el navegador bloquea la ventana, abre en la misma
 }
 async function copiar(txt, msg){
   try {
@@ -2004,6 +2005,8 @@ function abrirProducto(p){
       <div class="acciones">
         <button class="btn verde" id="h-wa">📲 Enviar imagen por WhatsApp</button>
         <button class="btn ghost" id="h-copiar">📋 Copiar el texto</button>
+        ${esDueno() ? `<button class="btn ghost" id="h-stock">➕ Agregar unidades</button>
+        <button class="btn rojo" id="h-borrar">🗑 Borrar perfume</button>` : ''}
         <button class="btn ghost" id="h-cerrar">Cerrar</button>
       </div>
     </div>
@@ -2014,6 +2017,97 @@ function abrirProducto(p){
   $('.hoja-fondo').addEventListener('click', e => { if(e.target.classList.contains('hoja-fondo')) cerrar(); });
   $('#h-copiar').onclick = () => copiar(textoInfo(p), 'Texto copiado');
   $('#h-wa').onclick = () => enviarImagenWhatsApp(p);
+  const bs = $('#h-stock'); if(bs) bs.onclick = () => abrirStockProducto(p);
+  const bb = $('#h-borrar'); if(bb) bb.onclick = () => borrarProductoCel(p);
+}
+
+// Agregar unidades al stock (se manda a la PC como ajuste y ella lo aplica sola).
+function abrirStockProducto(p){
+  const st = stockLocalDe(p);
+  const wrap = $('#hoja-wrap');
+  wrap.innerHTML = `<div class="hoja-fondo">
+    <div class="hoja">
+      <div class="agarre"></div>
+      <h2>Agregar unidades</h2>
+      <div class="sub">${esc(p.nombre)}</div>
+      <div class="aviso" style="margin:12px 0">Stock actual: <b>${st}</b></div>
+      <label class="f"><span>¿Cuántas unidades agregar?</span><input id="st-cant" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">
+        ${[1,2,3,5,10].map(n => `<button class="btn ghost sm" type="button" data-st-quick="${n}">+${n}</button>`).join('')}
+      </div>
+      <div style="display:grid;gap:8px;margin-top:10px">
+        <button class="btn" id="st-guardar">Agregar al stock</button>
+        <button class="btn ghost" id="st-cancelar">Cancelar</button>
+      </div>
+    </div>
+  </div>`;
+  const cerrar = () => { wrap.innerHTML = ''; };
+  $('#st-cancelar').onclick = cerrar;
+  $('.hoja-fondo').addEventListener('click', e => { if(e.target.classList.contains('hoja-fondo')) cerrar(); });
+  wrap.querySelectorAll('[data-st-quick]').forEach(b => {
+    b.onclick = () => { $('#st-cant').value = b.dataset.stQuick; };
+  });
+  $('#st-guardar').onclick = async () => {
+    const t = token();
+    if(!t) return toast('Falta la clave en Acceso', 'error');
+    const cant = Math.round(num($('#st-cant').value));
+    if(!(cant > 0)) return toast('Escribí cuántas unidades', 'error');
+    const btn = $('#st-guardar');
+    btn.disabled = true; btn.textContent = 'Enviando…';
+    try {
+      const r = await fetch(API, {
+        method:'POST',
+        headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action:'movimiento', token:t, tipo:'ajuste',
+          perfume_id: p.id, perfume: p.nombre, cantidad: cant,
+          nota: 'Stock desde el celular [[KQV:{"stock":1}]]',
+          dispositivo:'app-celular'
+        })
+      });
+      const j = await r.json();
+      if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó el ajuste');
+      const local = datos.inventario.find(x => String(x.id) === String(p.id));
+      if(local) local.stock = Number(local.stock || 0) + cant;
+      datos.guardado = Date.now();
+      guardarLS(LS.datos, datos);
+      cerrar();
+      render();
+      toast(`✅ ${cant} unidad${cant === 1 ? '' : 'es'} enviada${cant === 1 ? '' : 's'} a la PC`);
+    } catch(e){
+      toast(e.message || 'No se pudo agregar', 'error');
+      btn.disabled = false; btn.textContent = 'Agregar al stock';
+    }
+  };
+}
+
+// Borrar un perfume: va a la papelera de la PC (se puede recuperar allá).
+async function borrarProductoCel(p){
+  if(!confirm(`¿Borrar "${p.nombre}"?\n\nVa a la papelera de la PC y se puede recuperar.`)) return;
+  const t = token();
+  if(!t) return toast('Falta la clave en Acceso', 'error');
+  try {
+    const r = await fetch(API, {
+      method:'POST',
+      headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action:'movimiento', token:t, tipo:'ajuste',
+        perfume_id: p.id, perfume: p.nombre, cantidad: 1,
+        nota: 'Borrar perfume desde el celular [[KQV:{"borrar":1}]]',
+        dispositivo:'app-celular'
+      })
+    });
+    const j = await r.json();
+    if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó el borrado');
+    datos.inventario = datos.inventario.filter(x => String(x.id) !== String(p.id));
+    datos.guardado = Date.now();
+    guardarLS(LS.datos, datos);
+    $('#hoja-wrap').innerHTML = '';
+    render();
+    toast('🗑 Perfume enviado a la papelera de la PC');
+  } catch(e){
+    toast(e.message || 'No se pudo borrar', 'error');
+  }
 }
 
 /* ---------------- costos de compra (privado, con clave) ---------------- */
@@ -2314,9 +2408,9 @@ function mostrarCobroPagado(c, monto){
   if(!el) return;
   const telOk = String(c.telefono || '').replace(/\D/g,'').length >= 8;
   el.innerHTML = `<div>✅ Pago de ${money(monto)} registrado · ${esc(c.cliente)}</div>
-    <div style="font-size:12px;margin-top:4px">🎉 La venta quedó <b>pagada</b>. Mandale el agradecimiento ahora.</div>
+    <div style="font-size:12px;margin-top:4px">🎉 La venta quedó <b>pagada</b>. Te preparé el agradecimiento en WhatsApp: pegá y enviá.</div>
     <div class="acciones" style="margin-top:8px;justify-content:flex-end;gap:8px;flex-wrap:wrap">
-      ${telOk ? '<button class="btn sm" id="cb-gracias-pagada">🙏 Agradecimiento</button>' : ''}
+      ${telOk ? '<button class="btn sm" id="cb-gracias-pagada">🙏 Reenviar agradecimiento</button>' : ''}
       <button class="btn ghost sm" id="cb-cerrar-pagada">Cerrar</button>
     </div>`;
   el.style.display = '';
@@ -2420,8 +2514,13 @@ function abrirAbono(c){
         guardarLS(LS.cobros, { cobros, guardado: Date.now() });
       }
       if(vista === 'cobros') render();
-      if(restante <= 0.5) mostrarCobroPagado(c, monto);
-      else mostrarConfirmacionCobro(`✅ Abono de ${money(monto)} anotado · ${c.cliente} · Saldo ${money(restante)}`);
+      if(restante <= 0.5){
+        mostrarCobroPagado(c, monto);
+        // Agradecimiento automático: sticker listo + WhatsApp del cliente.
+        setTimeout(() => enviarGraciasAutomatica(c), 500);
+      } else {
+        mostrarConfirmacionCobro(`✅ Abono de ${money(monto)} anotado · ${c.cliente} · Saldo ${money(restante)}`);
+      }
       // La PC aplica el abono en segundos; refrescamos para que pase a Cobrados.
       programarRefrescoCobros();
     } catch(e){
@@ -2505,6 +2604,22 @@ async function enviarGraciasCel(v){
   if(!blob) return toast('No pude armar la imagen', 'error');
   await entregarImagen(blob, '🙏 Agradecimiento listo — pegalo en el chat');
   setTimeout(() => abrirWhatsApp('', tel), 700);
+}
+
+// Al terminar de pagar: deja el sticker listo y abre el WhatsApp del cliente.
+// WhatsApp no permite que una app web envíe sola: solo falta pegar y enviar.
+async function enviarGraciasAutomatica(v){
+  const tel = String(v.telefono || '').replace(/\D/g, '');
+  if(tel.length < 8) return false;
+  let blob = null;
+  try { blob = await imagenGraciasCel(v); } catch(e){ blob = null; }
+  if(blob){
+    await entregarImagen(blob, '🙏 Agradecimiento copiado — pegalo y enviá');
+  } else {
+    await copiar(`¡Gracias, ${primerNombreDe(v.cliente)}! 🙏`, '🙏 Texto copiado — pegalo y enviá');
+  }
+  setTimeout(() => abrirWhatsApp('', tel), 700);
+  return true;
 }
 
 function cajaNum(etiqueta, valor, color){
