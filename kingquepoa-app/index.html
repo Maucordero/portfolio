@@ -274,7 +274,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.21.0';
+const VERSION = '1.22.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1' };
@@ -719,7 +719,7 @@ function proximaCuotaISO(){
   return dia < 16 ? isoFecha(y, m, 16) : isoFecha(y, m + 1, 1);
 }
 function planDe(tipo){
-  return ({ pagos:2, pagos_sin_recargo:2, un_pago_abono:1, pagos3:3, pagos4:4, pagos5:5 })[tipo] || 0;
+  return ({ pagos:2, pagos_sin_recargo:2, un_pago_abono:1, un_pago_interes:1, pagos3:3, pagos4:4, pagos5:5 })[tipo] || 0;
 }
 function repartirMonto(total, n){
   const t = Math.max(0, Math.round(num(total)));
@@ -798,7 +798,20 @@ function planLocal(v){
   let abonado = abono;
   let saldo = Math.max(total - abono, 0);
 
-  if(planN > 0){
+  if(Array.isArray(v.cuotasEditadas) && v.cuotasEditadas.length){
+    // Plan editado a mano en el teléfono: se respetan fechas y montos exactos.
+    cuotas = v.cuotasEditadas.map((c,i) => ({
+      numero: i + 1,
+      monto: num(c.monto),
+      monto_total: num(c.monto),
+      vencimiento: c.fecha,
+      pagada: !!(v.abono_pagado && i === 0 && num(v.abono) > 0),
+      tipo: c.tipo === 'prima' ? 'prima' : 'abono',
+      etiqueta: (i === 0 && num(v.abono) > 0) ? 'Abono' : etiquetaPagoCel(i + 1),
+    }));
+    abonado = v.abono_pagado ? Math.min(num(v.abono), total) : 0;
+    saldo = Math.max(total - abonado, 0);
+  } else if(planN > 0){
     const nuevoModelo = v.abono_pagado !== undefined && v.abono_pagado !== null;
     if(nuevoModelo){
       const abonoPagado = !!v.abono_pagado;
@@ -1266,6 +1279,7 @@ function pintarVender(app){
           <option value="pagos5">A 5 pagos</option>
           <option value="pagos_sin_recargo">A 2 pagos sin recargo</option>
           <option value="un_pago_abono">A 1 pago con abono (sin recargo)</option>
+          <option value="un_pago_interes">A 1 pago con interés (15%)</option>
         </select></label>
         <div class="hint" style="grid-column:1/-1;margin-top:-4px">A pagos se suma el recargo configurado. <b>Contado</b> y las opciones <b>sin recargo</b> no lo llevan.</div>
       </div>
@@ -1274,14 +1288,18 @@ function pintarVender(app){
       <label class="f"><span>Cliente</span><input id="v-cli" placeholder="Nombre y apellido" autocomplete="off"></label>
       <label class="f"><span>Teléfono</span><input id="v-tel" type="tel" placeholder="8888 8888" inputmode="tel" autocomplete="off"></label>
       <div id="v-plan" class="oculto">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <label class="f"><span>Abono</span><input id="v-abono" type="number" min="0" step="100" inputmode="numeric"></label>
-          <label class="f" id="v-fecha-wrap"><span>Fecha del abono / primer pago</span><input id="v-fecha" type="date"></label>
-        </div>
-        <label class="f" style="display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.35;color:var(--muted);padding:8px 0">
+        <div class="titulo" style="margin:4px 0 6px">Plan de pagos</div>
+        <label class="f" style="display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.35;color:var(--muted);padding:4px 0 8px">
           <input type="checkbox" id="v-abono-pagado" style="width:auto;margin-top:2px;accent-color:var(--accent)">
           <span><b style="color:var(--text)">Ya lo dio</b> o lo da antes del primer pago</span>
         </label>
+        <label class="f"><span>Fecha del primer pago</span><input id="v-fecha" type="date"></label>
+        <div id="v-plan-tabla"></div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <span id="v-plan-suma" class="hint" style="flex:1"></span>
+          <button class="btn ghost sm" type="button" id="v-plan-repartir">⚖ Repartir saldo</button>
+        </div>
+        <div class="hint" id="v-plan-aviso"></div>
       </div>
       <label class="f"><span>Referencia (solo para vos)</span><input id="v-ref" placeholder="Ej: chofer Pany" autocomplete="off"></label>
       <label class="f"><span>Nota (opcional)</span><input id="v-nota" placeholder="Ej: entrega el viernes"></label>
@@ -1341,7 +1359,6 @@ function pintarVender(app){
     $('#v-prod-buscar').value = '';
     $('#v-cant').value = 1;
     $('#v-prod-sug').classList.add('oculto');
-    const ab = $('#v-abono'); if(ab) ab.dataset.tocado = '';
     renderItems();
     actualizar();
   };
@@ -1390,6 +1407,102 @@ function pintarVender(app){
     });
   };
 
+  let vPlanFilas = [];
+  let vPlanTipo = '';
+  let vPlanEditado = false;
+
+  const armarPlanCel = (planN, total, fechaVenta) => {
+    const prox = cuotasProg(fechaVenta, 1)[0] || fechaVenta;
+    const abonoPagado = !!($('#v-abono-pagado') && $('#v-abono-pagado').checked);
+    const abonoFecha = abonoPagado ? fechaVenta : prox;
+    const primeraPago = abonoPagado ? prox : (cuotasProg(prox, 2)[1] || prox);
+    const filas = [{ concepto:'abono', fecha: abonoFecha, monto: 0 }];
+    if(planN > 0){
+      const fechas = cuotasProg(primeraPago, planN);
+      const base = Math.floor(total / planN);
+      for(let i=0;i<planN;i++){
+        filas.push({ concepto:'pago', fecha: fechas[i], monto: i===planN-1 ? total - base*(planN-1) : base });
+      }
+    }
+    vPlanFilas = filas;
+  };
+
+  const recalcularPlanCel = (total) => {
+    const abono = Math.max(0, Math.min(num(vPlanFilas[0] && vPlanFilas[0].monto), total));
+    if(vPlanFilas[0]) vPlanFilas[0].monto = abono;
+    const pagos = vPlanFilas.filter(f => f.concepto === 'pago');
+    if(!pagos.length) return;
+    const resto = Math.max(0, total - abono);
+    const base = Math.floor(resto / pagos.length);
+    pagos.forEach((f,k)=>{ f.monto = k === pagos.length-1 ? resto - base*(pagos.length-1) : base; });
+  };
+
+  const actualizarSumaPlanCel = () => {
+    const total = totalVentaItems($tipo());
+    const suma = vPlanFilas.reduce((s,f)=>s+(num(f.monto)||0),0);
+    const dif = Math.round(total - suma);
+    const el = $('#v-plan-suma');
+    const aviso = $('#v-plan-aviso');
+    if(el){
+      el.textContent = dif === 0
+        ? `Suma ${money(suma)} · cuadra ✓`
+        : `Suma ${money(suma)} · ${dif>0?'falta':'sobra'} ${money(Math.abs(dif))}`;
+      el.style.color = dif === 0 ? 'var(--green)' : 'var(--gold2)';
+    }
+    if(aviso) aviso.textContent = dif === 0 ? '' : 'Al guardar se ajusta el último pago para que cuadre.';
+  };
+
+  const renderPlanCel = () => {
+    const cont = $('#v-plan-tabla');
+    if(!cont) return;
+    cont.innerHTML = vPlanFilas.map((f,i) => {
+      const et = f.concepto === 'abono' ? 'Abono' : etiquetaPagoCel(i);
+      return `<div style="display:grid;grid-template-columns:64px 1fr 96px 24px;gap:6px;align-items:center;margin-bottom:6px">
+        <span style="font-size:12px;color:var(--muted)">${et}</span>
+        <input type="date" data-plan-fecha="${i}" value="${esc(f.fecha)}" style="padding:8px">
+        <input type="number" min="0" step="500" data-plan-monto="${i}" value="${Math.round(f.monto)}" inputmode="numeric" style="padding:8px;text-align:right">
+        ${f.concepto === 'abono' ? `<button type="button" class="btn ghost sm" data-plan-cero="${i}" title="Dejar el abono en cero" style="padding:4px 6px">✕</button>` : '<span></span>'}
+      </div>`;
+    }).join('');
+    actualizarSumaPlanCel();
+    cont.querySelectorAll('[data-plan-fecha]').forEach(inp => {
+      inp.onchange = () => {
+        const i = +inp.dataset.planFecha;
+        if(vPlanFilas[i]) vPlanFilas[i].fecha = inp.value;
+        vPlanEditado = true;
+        actualizarSumaPlanCel();
+      };
+    });
+    cont.querySelectorAll('[data-plan-monto]').forEach(inp => {
+      inp.oninput = () => {
+        const i = +inp.dataset.planMonto;
+        if(vPlanFilas[i]) vPlanFilas[i].monto = Math.max(0, Math.round(num(inp.value)));
+        vPlanEditado = true;
+        actualizarSumaPlanCel();
+      };
+    });
+    cont.querySelectorAll('[data-plan-cero]').forEach(b => {
+      b.onclick = () => {
+        const i = +b.dataset.planCero;
+        if(vPlanFilas[i]) vPlanFilas[i].monto = 0;
+        vPlanEditado = true;
+        renderPlanCel();
+      };
+    });
+  };
+
+  const repartirPlanCel = () => {
+    const total = totalVentaItems($tipo());
+    const abono = Math.max(0, Math.min(num(vPlanFilas[0] && vPlanFilas[0].monto), total));
+    const pagos = vPlanFilas.filter(f => f.concepto === 'pago');
+    if(!pagos.length) return;
+    const resto = Math.max(0, total - abono);
+    const base = Math.floor(resto / pagos.length);
+    pagos.forEach((f,k)=>{ f.monto = k === pagos.length-1 ? resto - base*(pagos.length-1) : base; });
+    vPlanEditado = false;
+    renderPlanCel();
+  };
+
   const actualizar = () => {
     const res = $('#v-resumen');
     if(!vItems.length){
@@ -1405,17 +1518,27 @@ function pintarVender(app){
     const extra = Math.max(0, total - totalBase());
 
     $('#v-plan').classList.toggle('oculto', !esPlan);
+    if(esPlan){
+      const abonoPrevio = vPlanFilas[0] ? num(vPlanFilas[0].monto) : 0;
+      if(vPlanTipo !== tipo || !vPlanFilas.length){
+        armarPlanCel(planN, total, $('#v-fecha').value || hoyISO());
+        if(abonoPrevio > 0){
+          vPlanFilas[0].monto = Math.min(abonoPrevio, total);
+          recalcularPlanCel(total);
+        }
+        vPlanTipo = tipo;
+        vPlanEditado = false;
+      } else if(!vPlanEditado){
+        recalcularPlanCel(total);
+      }
+      renderPlanCel();
+    } else {
+      vPlanFilas = [];
+      vPlanTipo = '';
+    }
 
-    const abonoPagado = !!($('#v-abono-pagado') && $('#v-abono-pagado').checked);
-    const abono = $('#v-abono');
-    if(!esPlan) abono.value = 0;
-    else if(!abono.dataset.tocado) abono.value = Math.min(primaSugeridaItems(), total);
-
-    const monto = esPlan ? Math.min(num(abono.value), total) : total;
-    const resto = Math.max(0, total - monto);
-    const nCuotas = esPlan ? planN : 0;
-    const partesPago = nCuotas > 0 ? repartirMonto(resto, nCuotas) : [];
-    const cuota = partesPago[0] || 0;
+    const abono = esPlan && vPlanFilas[0] ? num(vPlanFilas[0].monto) : 0;
+    const pagos = vPlanFilas.filter(f => f.concepto === 'pago');
 
     const problemas = vItems.map(it => {
       const st = stockDeItem(it);
@@ -1427,9 +1550,8 @@ function pintarVender(app){
     const partes = [`<b>Total: ${money(total)}</b>`, `${cantTotal()} perfume${cantTotal() === 1 ? '' : 's'}`];
     if(esPlan && rec > 0) partes.push(`Recargo ${rec}%: +${money(extra)}`);
     if(esPlan){
-      if(monto > 0) partes.push(`${abonoPagado ? 'Abono ya cubierto' : 'Abono (primer pago)'}: ${money(monto)}`);
-      if(nCuotas > 0) partes.push(`${nCuotas} pago${nCuotas === 1 ? '' : 's'} de ${money(cuota)}`);
-      else partes.push('Queda pagada');
+      if(abono > 0) partes.push(`Abono: ${money(abono)}`);
+      partes.push(`${pagos.length} pago${pagos.length === 1 ? '' : 's'}: ${pagos.map(p => `${fmtFechaCorta(p.fecha)} ${money(p.monto)}`).join(' · ')}`);
     } else {
       partes.push(`Pagado: ${money(total)} · Saldo ₡0`);
     }
@@ -1471,19 +1593,42 @@ function pintarVender(app){
     actualizar();
   });
   $('#v-tipo').addEventListener('change', () => {
-    const ab = $('#v-abono'); if(ab) ab.dataset.tocado = '';
+    vPlanTipo = '';
+    vPlanEditado = false;
     actualizar();
   });
-  $('#v-abono-pagado').addEventListener('change', actualizar);
-  $('#v-abono').addEventListener('input', e => { e.target.dataset.tocado = '1'; actualizar(); });
+  $('#v-abono-pagado').addEventListener('change', () => {
+    vPlanTipo = '';
+    vPlanEditado = false;
+    actualizar();
+  });
+  $('#v-fecha').addEventListener('change', () => {
+    vPlanTipo = '';
+    vPlanEditado = false;
+    actualizar();
+  });
+  $('#v-plan-repartir').addEventListener('click', repartirPlanCel);
   $('#v-fecha').value = proximaCuotaISO();
 
   const vDesdeFormulario = (estado) => {
     const tipo = $tipo();
     const planN = planDe(tipo);
     const total = totalVentaItems(tipo);
-    const abono = planN > 0 ? Math.min(num($('#v-abono').value), total) : total;
-    const fecha = planN > 0 ? ($('#v-fecha').value || proximaCuotaISO()) : '';
+    let filas = [];
+    if(planN > 0){
+      filas = vPlanFilas.map(f => ({ fecha: f.fecha, monto: Math.round(num(f.monto)), tipo: 'abono' }));
+      const suma = filas.reduce((s,f)=>s+f.monto,0);
+      const dif = Math.round(total - suma);
+      if(dif !== 0){
+        for(let i=filas.length-1;i>=0;i--){
+          if(filas[i].monto + dif > 0){ filas[i].monto += dif; break; }
+        }
+      }
+      filas = filas.filter(f => f.monto > 0);
+    }
+    const abono = planN > 0 && vPlanFilas[0] && num(vPlanFilas[0].monto) > 0
+      ? Math.min(num(vPlanFilas[0].monto), total) : 0;
+    const primera = filas.find(f => f.monto > 0) || null;
     return {
       cliente: $('#v-cli').value.trim(),
       telefono: $('#v-tel').value.trim(),
@@ -1495,7 +1640,8 @@ function pintarVender(app){
       abono,
       tipo,
       abono_pagado: !!($('#v-abono-pagado') && $('#v-abono-pagado').checked),
-      fecha,
+      fecha: primera ? primera.fecha : '',
+      cuotasEditadas: filas,
       fecha_venta: hoyISO(),
       referencia: $('#v-ref').value.trim(),
       estado,
@@ -1531,14 +1677,13 @@ function pintarVender(app){
       if((num(it.cantidad) || 1) > st) return toast(`Solo hay ${st} de ${it.nombre}`, 'error');
     }
     const v = vDesdeFormulario('pendiente');
-    const plan = planLocal(v);
-    const cuotasMarca = (plan.cuotas || []).map(c => ({ fecha: c.vencimiento, monto: Math.round(c.monto), tipo: c.tipo === 'prima' ? 'prima' : 'abono' }));
-    const primera = (plan.cuotas || []).find(c => !c.pagada);
+    const cuotasMarca = (v.cuotasEditadas || []).map(c => ({ fecha: c.fecha, monto: Math.round(c.monto), tipo: c.tipo === 'prima' ? 'prima' : 'abono' }));
+    const primera = (v.abono_pagado && v.abono > 0) ? (cuotasMarca[1] || cuotasMarca[0]) : cuotasMarca[0];
     const abonoFecha = v.abono_pagado ? hoyISO() : v.fecha;
-    const etiquetaPago = { contado:'contado', pagos:'2 pagos', pagos3:'3 pagos', pagos4:'4 pagos', pagos5:'5 pagos', pagos_sin_recargo:'2 pagos sin recargo', un_pago_abono:'1 pago con abono' }[v.tipo] || v.tipo;
+    const etiquetaPago = { contado:'contado', pagos:'2 pagos', pagos3:'3 pagos', pagos4:'4 pagos', pagos5:'5 pagos', pagos_sin_recargo:'2 pagos sin recargo', un_pago_abono:'1 pago con abono', un_pago_interes:'1 pago con interés' }[v.tipo] || v.tipo;
     const marca = '[[KQV:' + JSON.stringify({
       tipo_pago: v.tipo, abono: v.abono,
-      primera_cuota: primera ? primera.vencimiento : v.fecha,
+      primera_cuota: primera ? primera.fecha : v.fecha,
       abono_modo: 'inicial', abono_pagado: v.abono_pagado, abono_fecha: abonoFecha,
       cuotas: cuotasMarca, items: v.items, referencia: v.referencia,
     }) + ']]';
@@ -1576,8 +1721,10 @@ function pintarVender(app){
       $('#v-prod').value = '';
       $('#v-prod-buscar').value = '';
       vItems = [];
+      vPlanFilas = [];
+      vPlanTipo = '';
+      vPlanEditado = false;
       renderItems();
-      const ab = $('#v-abono'); if(ab){ ab.dataset.tocado = ''; ab.value = 0; }
       actualizar();
       mostrarVentaAnotada(vLocal);
     } catch(e){
@@ -1600,7 +1747,7 @@ function pintarVentasLocales(){
     return;
   }
   cont.innerHTML = lista.map((v, i) => {
-    const etiqueta = { contado:'Contado', pagos:'2 pagos', pagos3:'3 pagos', pagos4:'4 pagos', pagos5:'5 pagos', pagos_sin_recargo:'2 pagos sin recargo', un_pago_abono:'1 pago con abono', programado:'programado' }[v.tipo] || v.tipo;
+    const etiqueta = { contado:'Contado', pagos:'2 pagos', pagos3:'3 pagos', pagos4:'4 pagos', pagos5:'5 pagos', pagos_sin_recargo:'2 pagos sin recargo', un_pago_abono:'1 pago con abono', un_pago_interes:'1 pago con interés', programado:'programado' }[v.tipo] || v.tipo;
     const estado = v.estado === 'confirmada'
       ? '<span class="tag" style="color:var(--green)">✅ en el sistema</span>'
       : '<span class="tag" style="color:var(--gold2)">⏳ esperando la PC</span>';
@@ -2371,6 +2518,7 @@ function pintarCobros(app){
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;align-items:center;align-self:center">
           ${abonosOn() && !esLocal ? `<span data-abonar="${esc(c.venta_id)}" style="font-size:20px;color:var(--gold2);cursor:pointer" title="Registrar abono">💵</span>` : ''}
+          ${!esLocal ? `<span data-editar-cobro="${esc(c.venta_id)}" style="font-size:18px;color:var(--gold2);cursor:pointer" title="Editar cobro">✎</span>` : ''}
           <span style="font-size:19px;color:var(--green);cursor:pointer" title="Mandar recordatorio">📲</span>
         </div>
       </div>`;
@@ -2381,6 +2529,13 @@ function pintarCobros(app){
         ev.stopPropagation();
         const c = lista.find(x => String(x.venta_id) === String(el.dataset.abonar));
         if(c) abrirAbono(c);
+      });
+    });
+    cont.querySelectorAll('[data-editar-cobro]').forEach(el => {
+      el.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const c = lista.find(x => String(x.venta_id) === String(el.dataset.editarCobro));
+        if(c) abrirEditarCobro(c);
       });
     });
     cont.querySelectorAll('[data-cobro]').forEach(el => {
@@ -2539,6 +2694,136 @@ function abrirAbono(c){
     } catch(e){
       toast(e.message || 'No se pudo registrar', 'error');
       btn.disabled = false; btn.textContent = 'Registrar abono';
+    }
+  };
+}
+
+// Editar un cobro existente: cliente, teléfono y plan de pagos.
+function abrirEditarCobro(c){
+  if(!c) return;
+  const total = num(c.total);
+  let filas = [];
+  try { filas = JSON.parse(c.cuotas || '[]'); } catch(e){ filas = []; }
+  filas = (Array.isArray(filas) ? filas : []).map(x => ({
+    fecha: String(x.f || x.fecha || '').slice(0,10),
+    monto: num(x.m != null ? x.m : x.monto),
+    pagada: !!(x.p != null ? x.p : x.pagada),
+    tipo: x.t || x.tipo || 'abono',
+  }));
+  if(!filas.length){
+    filas = [{ fecha: String(c.proximo || '').slice(0,10) || proximaCuotaISO(), monto: total, pagada: false, tipo: 'abono' }];
+  }
+  const wrap = $('#hoja-wrap');
+  wrap.innerHTML = `<div class="hoja-fondo"><div class="hoja">
+    <div class="agarre"></div>
+    <h2>Editar cobro</h2>
+    <div class="sub">${esc(c.producto || '')}</div>
+    <label class="f"><span>Cliente</span><input id="ec-cli" value="${esc(c.cliente || '')}" autocomplete="off"></label>
+    <label class="f"><span>Teléfono</span><input id="ec-tel" type="tel" value="${esc(c.telefono || '')}" inputmode="tel" autocomplete="off"></label>
+    <div class="titulo" style="margin:10px 0 6px">Fechas y montos</div>
+    <div id="ec-plan"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+      <span id="ec-suma" class="hint" style="flex:1"></span>
+      <button class="btn ghost sm" id="ec-repartir" type="button">⚖ Repartir</button>
+    </div>
+    <div class="hint" id="ec-aviso"></div>
+    <div style="display:grid;gap:8px;margin-top:10px">
+      <button class="btn" id="ec-guardar">Guardar cambios</button>
+      <button class="btn ghost" id="ec-cancelar">Cancelar</button>
+    </div>
+  </div></div>`;
+  const cerrar = () => { wrap.innerHTML = ''; };
+  $('#ec-cancelar').onclick = cerrar;
+  $('.hoja-fondo').addEventListener('click', e => { if(e.target.classList.contains('hoja-fondo')) cerrar(); });
+
+  const actualizarSuma = () => {
+    const s = filas.reduce((a,f)=>a+(num(f.monto)||0),0);
+    const dif = Math.round(total - s);
+    const el = $('#ec-suma'), aviso = $('#ec-aviso');
+    if(el){
+      el.textContent = dif === 0 ? `Suma ${money(s)} · cuadra ✓` : `Suma ${money(s)} · ${dif>0?'falta':'sobra'} ${money(Math.abs(dif))}`;
+      el.style.color = dif === 0 ? 'var(--green)' : 'var(--gold2)';
+    }
+    if(aviso) aviso.textContent = dif === 0 ? '' : 'Al guardar se ajusta el último pago pendiente.';
+  };
+  const render = () => {
+    const cont = $('#ec-plan');
+    cont.innerHTML = filas.map((f,i) => `<div style="display:grid;grid-template-columns:64px 1fr 96px;gap:6px;align-items:center;margin-bottom:6px">
+      <span style="font-size:12px;color:var(--muted)">${f.pagada ? 'Pagada' : etiquetaPagoCel(i+1)}</span>
+      <input type="date" data-ec-fecha="${i}" value="${esc(f.fecha)}" style="padding:8px" ${f.pagada ? 'disabled' : ''}>
+      <input type="number" min="0" step="500" data-ec-monto="${i}" value="${Math.round(f.monto)}" inputmode="numeric" style="padding:8px;text-align:right" ${f.pagada ? 'disabled' : ''}>
+    </div>`).join('');
+    actualizarSuma();
+    cont.querySelectorAll('[data-ec-fecha]').forEach(inp => {
+      inp.onchange = () => { const i=+inp.dataset.ecFecha; if(filas[i]) filas[i].fecha = inp.value; };
+    });
+    cont.querySelectorAll('[data-ec-monto]').forEach(inp => {
+      inp.oninput = () => { const i=+inp.dataset.ecMonto; if(filas[i]) filas[i].monto = Math.max(0, Math.round(num(inp.value))); actualizarSuma(); };
+    });
+  };
+  render();
+  $('#ec-repartir').onclick = () => {
+    const pendientes = filas.filter(f => !f.pagada);
+    if(!pendientes.length) return;
+    const pagado = filas.filter(f => f.pagada).reduce((s,f)=>s+num(f.monto),0);
+    const resto = Math.max(0, total - pagado);
+    const base = Math.floor(resto / pendientes.length);
+    pendientes.forEach((f,k)=>{ f.monto = k === pendientes.length-1 ? resto - base*(pendientes.length-1) : base; });
+    render();
+  };
+  $('#ec-guardar').onclick = async () => {
+    const t = token();
+    if(!t) return toast('Falta la clave en Acceso', 'error');
+    const cliente = $('#ec-cli').value.trim();
+    const telefono = $('#ec-tel').value.trim();
+    if(!cliente) return toast('Falta el nombre del cliente', 'error');
+    if(!telefono) return toast('Falta el teléfono del cliente', 'error');
+    const nuevas = filas.map(f => ({ fecha: f.fecha, monto: Math.round(num(f.monto)), tipo: 'abono' }));
+    const s = nuevas.reduce((a,f)=>a+f.monto,0);
+    const dif = Math.round(total - s);
+    if(dif !== 0){
+      for(let i=nuevas.length-1;i>=0;i--){
+        if(!filas[i].pagada){ nuevas[i].monto += dif; break; }
+      }
+    }
+    if(nuevas.some(f => f.monto <= 0)) return toast('Los montos deben ser mayores a cero', 'error');
+    if(nuevas.some(f => !/^\d{4}-\d{2}-\d{2}$/.test(f.fecha))) return toast('Revisá las fechas de pago', 'error');
+    const fv = String(c.fecha_venta || '').slice(0, 10);
+    if(fv && nuevas.some(f => f.fecha < fv)) return toast('Las fechas no pueden ser anteriores a la venta', 'error');
+    const btn = $('#ec-guardar');
+    btn.disabled = true; btn.textContent = 'Guardando…';
+    try {
+      const marca = '[[KQV:' + JSON.stringify({ venta_editar: 1, venta_id: Number(c.venta_id), cliente, telefono, cuotas: nuevas }) + ']]';
+      const r = await fetch(API, {
+        method:'POST',
+        headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action:'movimiento', token:t, tipo:'nota',
+          cliente, telefono, perfume: c.producto || '',
+          nota: 'Editar cobro ' + marca,
+          dispositivo:'app-celular'
+        })
+      });
+      const j = await r.json();
+      if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó la edición');
+      const idx = cobros.findIndex(x => String(x.venta_id) === String(c.venta_id));
+      if(idx >= 0){
+        const prox = nuevas.find((f,i) => !filas[i].pagada);
+        cobros[idx] = Object.assign({}, cobros[idx], {
+          cliente, telefono,
+          cuotas: JSON.stringify(nuevas.map((f,i)=>({ n:i+1, f:f.fecha, m:f.monto, p: filas[i].pagada ? 1 : 0, t:f.tipo }))),
+          proximo: prox ? prox.fecha : '',
+          proximo_monto: prox ? prox.monto : 0,
+        });
+        guardarLS(LS.cobros, { cobros, guardado: Date.now() });
+      }
+      cerrar();
+      if(vista === 'cobros') render();
+      toast('✅ Cobro enviado a la PC');
+      programarRefrescoCobros();
+    } catch(e){
+      toast(e.message || 'No se pudo editar', 'error');
+      btn.disabled = false; btn.textContent = 'Guardar cambios';
     }
   };
 }
