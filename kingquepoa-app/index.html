@@ -274,7 +274,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.22.0';
+const VERSION = '1.23.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1' };
@@ -2701,7 +2701,10 @@ function abrirAbono(c){
 // Editar un cobro existente: cliente, teléfono y plan de pagos.
 function abrirEditarCobro(c){
   if(!c) return;
-  const total = num(c.total);
+  let total = num(c.total);
+  let tipo = String(c.tipo_pago || 'pagos');
+  const recActual = recargoDe(tipo);
+  const baseTotal = recActual > 0 ? total / (1 + recActual/100) : total;
   let filas = [];
   try { filas = JSON.parse(c.cuotas || '[]'); } catch(e){ filas = []; }
   filas = (Array.isArray(filas) ? filas : []).map(x => ({
@@ -2720,6 +2723,15 @@ function abrirEditarCobro(c){
     <div class="sub">${esc(c.producto || '')}</div>
     <label class="f"><span>Cliente</span><input id="ec-cli" value="${esc(c.cliente || '')}" autocomplete="off"></label>
     <label class="f"><span>Teléfono</span><input id="ec-tel" type="tel" value="${esc(c.telefono || '')}" inputmode="tel" autocomplete="off"></label>
+    <label class="f"><span>Forma de pago</span><select id="ec-tipo">
+      <option value="pagos">A 2 pagos</option>
+      <option value="pagos3">A 3 pagos</option>
+      <option value="pagos4">A 4 pagos</option>
+      <option value="pagos5">A 5 pagos</option>
+      <option value="pagos_sin_recargo">A 2 pagos sin recargo</option>
+      <option value="un_pago_abono">A 1 pago con abono (sin recargo)</option>
+      <option value="un_pago_interes">A 1 pago con interés (15%)</option>
+    </select></label>
     <div class="titulo" style="margin:10px 0 6px">Fechas y montos</div>
     <div id="ec-plan"></div>
     <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
@@ -2762,6 +2774,28 @@ function abrirEditarCobro(c){
     });
   };
   render();
+  const selTipo = $('#ec-tipo');
+  if(selTipo){
+    selTipo.value = tipo;
+    selTipo.onchange = () => {
+      tipo = selTipo.value;
+      const recNuevo = recargoDe(tipo);
+      total = mil(baseTotal * (1 + recNuevo/100));
+      const pagadas = filas.filter(f => f.pagada);
+      const pagado = pagadas.reduce((s,f)=>s+num(f.monto),0);
+      const resto = Math.max(0, total - pagado);
+      const planN = planDe(tipo);
+      const fechaBase = (filas.find(f => !f.pagada) || {}).fecha || proximaCuotaISO();
+      if(planN > 0){
+        const fechas = cuotasProg(fechaBase, planN);
+        const partes = repartirMonto(resto, planN);
+        filas = [...pagadas, ...fechas.map((f,i)=>({ fecha:f, monto:partes[i], pagada:false, tipo:'abono' }))];
+      } else {
+        filas = [...pagadas, { fecha: fechaBase, monto: resto, pagada: false, tipo:'abono' }];
+      }
+      render();
+    };
+  }
   $('#ec-repartir').onclick = () => {
     const pendientes = filas.filter(f => !f.pagada);
     if(!pendientes.length) return;
@@ -2778,7 +2812,7 @@ function abrirEditarCobro(c){
     const telefono = $('#ec-tel').value.trim();
     if(!cliente) return toast('Falta el nombre del cliente', 'error');
     if(!telefono) return toast('Falta el teléfono del cliente', 'error');
-    const nuevas = filas.map(f => ({ fecha: f.fecha, monto: Math.round(num(f.monto)), tipo: 'abono' }));
+    const nuevas = filas.map(f => ({ fecha: f.fecha, monto: Math.round(num(f.monto)), tipo: 'abono', pagada: !!f.pagada }));
     const s = nuevas.reduce((a,f)=>a+f.monto,0);
     const dif = Math.round(total - s);
     if(dif !== 0){
@@ -2793,7 +2827,7 @@ function abrirEditarCobro(c){
     const btn = $('#ec-guardar');
     btn.disabled = true; btn.textContent = 'Guardando…';
     try {
-      const marca = '[[KQV:' + JSON.stringify({ venta_editar: 1, venta_id: Number(c.venta_id), cliente, telefono, cuotas: nuevas }) + ']]';
+      const marca = '[[KQV:' + JSON.stringify({ venta_editar: 1, venta_id: Number(c.venta_id), cliente, telefono, tipo_pago: tipo, cuotas: nuevas }) + ']]';
       const r = await fetch(API, {
         method:'POST',
         headers:{ 'Content-Type':'text/plain;charset=utf-8' },
@@ -2809,9 +2843,11 @@ function abrirEditarCobro(c){
       const idx = cobros.findIndex(x => String(x.venta_id) === String(c.venta_id));
       if(idx >= 0){
         const prox = nuevas.find((f,i) => !filas[i].pagada);
+        const abonadoNuevo = nuevas.filter(f => f.pagada).reduce((a,f)=>a+f.monto,0);
         cobros[idx] = Object.assign({}, cobros[idx], {
-          cliente, telefono,
-          cuotas: JSON.stringify(nuevas.map((f,i)=>({ n:i+1, f:f.fecha, m:f.monto, p: filas[i].pagada ? 1 : 0, t:f.tipo }))),
+          cliente, telefono, tipo_pago: tipo, total,
+          abonado: abonadoNuevo, saldo: Math.max(0, total - abonadoNuevo),
+          cuotas: JSON.stringify(nuevas.map((f,i)=>({ n:i+1, f:f.fecha, m:f.monto, p: f.pagada ? 1 : 0, t:f.tipo }))),
           proximo: prox ? prox.fecha : '',
           proximo_monto: prox ? prox.monto : 0,
         });
