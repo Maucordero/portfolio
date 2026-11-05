@@ -274,7 +274,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.20.0';
+const VERSION = '1.21.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1' };
@@ -734,9 +734,12 @@ function recargoDe(tipo){
   const n = planDe(tipo);
   if(!n || tipo === 'pagos_sin_recargo' || tipo === 'un_pago_abono') return 0;
   const c = datos.config || {};
-  const v = num(c['recargo_p' + n]);
-  if(v > 0) return v;
-  return n === 2 ? num(c.recargo_pagos) : 0;
+  const clave = 'recargo_p' + n;
+  // Si el catálogo del teléfono está viejo y no trae el recargo, usa 15%
+  // (el valor normal). Si en la PC lo pusieron en 0, ese 0 sí se respeta.
+  if(c[clave] !== undefined && c[clave] !== null && c[clave] !== '') return num(c[clave]);
+  if(n === 2 && c.recargo_pagos !== undefined && c.recargo_pagos !== null && c.recargo_pagos !== '') return num(c.recargo_pagos);
+  return 15;
 }
 function totalVenta(p, cant, tipo){
   return mil(num(p.precio_crc) * cant * (1 + recargoDe(tipo) / 100));
@@ -1256,14 +1259,15 @@ function pintarVender(app){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <label class="f"><span>Cantidad</span><input id="v-cant" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
         <label class="f"><span>Pago</span><select id="v-tipo">
-          <option value="contado">Contado</option>
-          <option value="pagos">A 2 pagos</option>
+          <option value="pagos" selected>A 2 pagos</option>
+          <option value="contado">Contado (sin recargo)</option>
           <option value="pagos3">A 3 pagos</option>
           <option value="pagos4">A 4 pagos</option>
           <option value="pagos5">A 5 pagos</option>
           <option value="pagos_sin_recargo">A 2 pagos sin recargo</option>
-          <option value="un_pago_abono">A 1 pago con abono</option>
+          <option value="un_pago_abono">A 1 pago con abono (sin recargo)</option>
         </select></label>
+        <div class="hint" style="grid-column:1/-1;margin-top:-4px">A pagos se suma el recargo configurado. <b>Contado</b> y las opciones <b>sin recargo</b> no lo llevan.</div>
       </div>
       <button class="btn ghost" id="v-agregar" type="button" style="margin-top:8px">➕ Agregar perfume</button>
       <div id="v-items" class="oculto" style="margin:8px 0"></div>
@@ -1397,6 +1401,8 @@ function pintarVender(app){
     const planN = planDe(tipo);
     const esPlan = planN > 0;
     const total = totalVentaItems(tipo);
+    const rec = esPlan ? recargoDe(tipo) : 0;
+    const extra = Math.max(0, total - totalBase());
 
     $('#v-plan').classList.toggle('oculto', !esPlan);
 
@@ -1419,6 +1425,7 @@ function pintarVender(app){
     }).filter(Boolean);
 
     const partes = [`<b>Total: ${money(total)}</b>`, `${cantTotal()} perfume${cantTotal() === 1 ? '' : 's'}`];
+    if(esPlan && rec > 0) partes.push(`Recargo ${rec}%: +${money(extra)}`);
     if(esPlan){
       if(monto > 0) partes.push(`${abonoPagado ? 'Abono ya cubierto' : 'Abono (primer pago)'}: ${money(monto)}`);
       if(nCuotas > 0) partes.push(`${nCuotas} pago${nCuotas === 1 ? '' : 's'} de ${money(cuota)}`);
@@ -2021,24 +2028,25 @@ function abrirProducto(p){
   const bb = $('#h-borrar'); if(bb) bb.onclick = () => borrarProductoCel(p);
 }
 
-// Agregar unidades al stock (se manda a la PC como ajuste y ella lo aplica sola).
+// Sumar o quitar unidades del stock (se manda a la PC como ajuste y ella lo aplica sola).
 function abrirStockProducto(p){
   const st = stockLocalDe(p);
   const wrap = $('#hoja-wrap');
   wrap.innerHTML = `<div class="hoja-fondo">
     <div class="hoja">
       <div class="agarre"></div>
-      <h2>Agregar unidades</h2>
+      <h2>Unidades del stock</h2>
       <div class="sub">${esc(p.nombre)}</div>
       <div class="aviso" style="margin:12px 0">Stock actual: <b>${st}</b></div>
-      <label class="f"><span>¿Cuántas unidades agregar?</span><input id="st-cant" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
+      <label class="f"><span>¿Cuántas unidades?</span><input id="st-cant" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">
-        ${[1,2,3,5,10].map(n => `<button class="btn ghost sm" type="button" data-st-quick="${n}">+${n}</button>`).join('')}
+        ${[1,2,3,5,10].map(n => `<button class="btn ghost sm" type="button" data-st-quick="${n}">${n}</button>`).join('')}
       </div>
-      <div style="display:grid;gap:8px;margin-top:10px">
-        <button class="btn" id="st-guardar">Agregar al stock</button>
-        <button class="btn ghost" id="st-cancelar">Cancelar</button>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+        <button class="btn" id="st-agregar">➕ Agregar</button>
+        <button class="btn ghost" id="st-quitar">➖ Quitar</button>
       </div>
+      <button class="btn ghost" id="st-cancelar" style="margin-top:8px">Cancelar</button>
     </div>
   </div>`;
   const cerrar = () => { wrap.innerHTML = ''; };
@@ -2047,12 +2055,13 @@ function abrirStockProducto(p){
   wrap.querySelectorAll('[data-st-quick]').forEach(b => {
     b.onclick = () => { $('#st-cant').value = b.dataset.stQuick; };
   });
-  $('#st-guardar').onclick = async () => {
+  const enviar = async (signo, btn) => {
     const t = token();
     if(!t) return toast('Falta la clave en Acceso', 'error');
     const cant = Math.round(num($('#st-cant').value));
     if(!(cant > 0)) return toast('Escribí cuántas unidades', 'error');
-    const btn = $('#st-guardar');
+    const delta = signo * cant;
+    const texto = btn.textContent;
     btn.disabled = true; btn.textContent = 'Enviando…';
     try {
       const r = await fetch(API, {
@@ -2060,7 +2069,7 @@ function abrirStockProducto(p){
         headers:{ 'Content-Type':'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action:'movimiento', token:t, tipo:'ajuste',
-          perfume_id: p.id, perfume: p.nombre, cantidad: cant,
+          perfume_id: p.id, perfume: p.nombre, cantidad: delta,
           nota: 'Stock desde el celular [[KQV:{"stock":1}]]',
           dispositivo:'app-celular'
         })
@@ -2068,17 +2077,21 @@ function abrirStockProducto(p){
       const j = await r.json();
       if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó el ajuste');
       const local = datos.inventario.find(x => String(x.id) === String(p.id));
-      if(local) local.stock = Number(local.stock || 0) + cant;
+      if(local) local.stock = Math.max(0, Number(local.stock || 0) + delta);
       datos.guardado = Date.now();
       guardarLS(LS.datos, datos);
       cerrar();
       render();
-      toast(`✅ ${cant} unidad${cant === 1 ? '' : 'es'} enviada${cant === 1 ? '' : 's'} a la PC`);
+      toast(delta > 0
+        ? `✅ ${cant} unidad${cant === 1 ? '' : 'es'} agregada${cant === 1 ? '' : 's'}`
+        : `✅ ${cant} unidad${cant === 1 ? '' : 'es'} quitada${cant === 1 ? '' : 's'}`);
     } catch(e){
-      toast(e.message || 'No se pudo agregar', 'error');
-      btn.disabled = false; btn.textContent = 'Agregar al stock';
+      toast(e.message || 'No se pudo cambiar el stock', 'error');
+      btn.disabled = false; btn.textContent = texto;
     }
   };
+  $('#st-agregar').onclick = () => enviar(1, $('#st-agregar'));
+  $('#st-quitar').onclick = () => enviar(-1, $('#st-quitar'));
 }
 
 // Borrar un perfume: va a la papelera de la PC (se puede recuperar allá).
