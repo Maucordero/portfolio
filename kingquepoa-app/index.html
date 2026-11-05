@@ -68,6 +68,17 @@
   }
   .chip.on{background:rgba(201,162,75,.14);border-color:rgba(201,162,75,.5);color:var(--gold2)}
 
+  /* Links rápidos: página, WhatsApp y catálogo (se copian con un toque) */
+  .links-app{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+  .links-app button{
+    display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 6px;
+    border-radius:var(--r-sm);background:var(--panel);border:1px solid var(--line);
+    color:var(--text);font-size:11.5px;line-height:1.2
+  }
+  .links-app button:active{background:var(--panel2)}
+  .links-app .em{font-size:20px;line-height:1}
+  .links-app small{color:var(--muted);font-size:10px}
+
   .prod{
     display:flex;gap:12px;align-items:flex-start;padding:12px;margin-bottom:10px;
     background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
@@ -263,7 +274,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.18.0';
+const VERSION = '1.19.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1' };
@@ -593,12 +604,28 @@ function render(){
 
 function pintarStock(app){
   app.innerHTML = `
+    <div class="links-app" id="links-app">
+      <button data-link="pagina" title="Copiar el link de la página web"><span class="em">🌐</span><span>Página</span><small>copiar</small></button>
+      <button data-link="whatsapp" title="Copiar el link de WhatsApp"><span class="em">💬</span><span>WhatsApp</span><small>copiar</small></button>
+      <button data-link="catalogo" title="Copiar el link del catálogo"><span class="em">📲</span><span>Catálogo</span><small>copiar</small></button>
+    </div>
     <div class="buscador"><span>🔍</span><input id="q" placeholder="Buscar perfume o marca…" value="${esc(filtro.q)}" autocomplete="off"></div>
     <div class="chips" id="chips">
       ${['Todos','Hombre','Mujer','Unisex'].map(c => `<button class="chip ${filtro.cat===c?'on':''}" data-cat="${c}">${c}</button>`).join('')}
       <button class="chip ${filtro.soloStock?'on':''}" data-stock="1">En stock</button>
     </div>
     <div id="lista"></div>`;
+
+  app.querySelectorAll('[data-link]').forEach(b => {
+    b.onclick = () => {
+      const cfg = datos.config || {};
+      const url = b.dataset.link === 'pagina' ? cfg.pagina_web
+        : b.dataset.link === 'whatsapp' ? cfg.whatsapp
+        : cfg.catalogo_wa;
+      if(!url) return toast('Ese link no está configurado en la PC', 'error');
+      copiar(url, 'Link copiado');
+    };
+  });
 
   $('#q').addEventListener('input', e => { filtro.q = e.target.value; pintarLista(); });
   $('#chips').addEventListener('click', e => {
@@ -2306,7 +2333,7 @@ function mostrarCobroPagado(c, monto){
   if(bc) bc.onclick = () => { el.style.display = 'none'; };
 }
 
-// Refresca Cobros cuando el aviso ya se cerró (o a los 90 s como máximo),
+// Refresca Cobros cuando el aviso ya se cerró (o a los 150 s como máximo),
 // para que la venta aparezca en Cobrados sin borrar el agradecimiento.
 function programarRefrescoCobros(intentos = 0){
   setTimeout(() => {
