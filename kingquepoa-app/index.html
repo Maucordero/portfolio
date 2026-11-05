@@ -1287,7 +1287,7 @@ function pintarVender(app){
       </div>
       <button class="btn ghost" id="v-agregar" type="button" style="margin-top:8px">➕ Agregar perfume</button>
       <div id="v-items" class="oculto" style="margin:8px 0"></div>
-      <label class="f"><span>Cliente</span><input id="v-cli" placeholder="Nombre y apellido" autocomplete="off"></label>
+      <label class="f"><span>Cliente</span><input id="v-cli" list="v-cli-list" placeholder="Nombre y apellido" autocomplete="off"><datalist id="v-cli-list"></datalist></label>
       <label class="f"><span>Teléfono</span><input id="v-tel" type="tel" placeholder="8888 8888" inputmode="tel" autocomplete="off"></label>
       <div id="v-plan" class="oculto">
         <div class="titulo" style="margin:4px 0 6px">Plan de pagos</div>
@@ -1603,6 +1603,25 @@ function pintarVender(app){
     vPlanTipo = '';
     vPlanEditado = false;
     actualizar();
+  });
+  const llenarClientes = () => {
+    const dl = $('#v-cli-list'); if(!dl) return;
+    dl.innerHTML = promoListaCel().map(f => `<option value="${esc(f.nombre)}">${esc(f.tel || '')}</option>`).join('');
+  };
+  const cliCoincide = () => {
+    const n = promoSinAcento($('#v-cli').value);
+    return n ? promoListaCel().find(f => promoSinAcento(f.nombre) === n) : null;
+  };
+  if(!promo){
+    const cache = leerLS(LS.promo, null);
+    if(cache && Array.isArray(cache.promo)) promo = cache.promo;
+  }
+  if(!promo && !cargandoPromo && token()) cargarPromo(false);
+  llenarClientes();
+  $('#v-cli').addEventListener('input', () => {
+    llenarClientes();
+    const f = cliCoincide();
+    if(f && f.tel && !$('#v-tel').value.trim()) $('#v-tel').value = f.tel;
   });
   $('#v-fecha').addEventListener('change', () => {
     vPlanTipo = '';
