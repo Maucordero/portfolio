@@ -2484,6 +2484,7 @@ function filaCobradoCel(v){
     <div style="display:flex;flex-direction:column;gap:8px;align-items:center;align-self:center">
       ${telOk ? `<span data-gracias-cobrado="${esc(v.id)}" style="font-size:20px;color:var(--gold2);cursor:pointer" title="Mandar agradecimiento">🙏</span>` : ''}
       ${v.local && v.pendiente ? `<span data-factura-cobrado="${esc(v.id)}" style="font-size:18px;color:var(--green);cursor:pointer" title="Factura">📲</span>` : ''}
+      ${v.local && v.pendiente ? `<span data-editar-cobrado="${esc(v.id)}" style="font-size:18px;color:var(--gold2);cursor:pointer" title="Editar cliente (esperando la PC)">✎</span>` : ''}
     </div>
   </div>`;
 }
@@ -2566,6 +2567,14 @@ function pintarCobros(app){
           const id = el.dataset.facturaCobrado;
           const l = ventasLocales().find(x => ('local-' + x.id) === id);
           if(l) await enviarFacturaLocal(l);
+        });
+      });
+      cont.querySelectorAll('[data-editar-cobrado]').forEach(el => {
+        el.addEventListener('click', ev => {
+          ev.stopPropagation();
+          const id = el.dataset.editarCobrado;
+          const l = ventasLocales().find(x => ('local-' + x.id) === id);
+          if(l) abrirEditarClienteLocal({ venta_id: id, producto: l.perfume || '', cliente: l.cliente, telefono: l.telefono });
         });
       });
       return;
