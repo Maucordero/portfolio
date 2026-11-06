@@ -60,6 +60,17 @@
   .buscador input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,162,75,.15)}
   .buscador span{position:absolute;left:13px;top:11px;color:var(--muted);font-size:16px}
 
+  /* Buscador fijo en Stock: al escrollear queda pegado debajo del encabezado,
+     así se puede escribir el perfume sin volver hasta arriba. */
+  .stock-filtros{
+    position:sticky;z-index:15;top:var(--alto-header, 58px);
+    margin:0 -14px 6px;padding:8px 14px 0;
+    background:rgba(14,16,20,.96);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--line);
+  }
+  .stock-filtros .buscador{margin-bottom:8px}
+  .stock-filtros .chips{padding-bottom:8px}
+
   .chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:10px;scrollbar-width:none}
   .chips::-webkit-scrollbar{display:none}
   .chip{
@@ -275,7 +286,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.25.0';
+const VERSION = '1.26.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1', promo:'kq_promo_v1' };
@@ -613,10 +624,12 @@ function pintarStock(app){
       <button data-link="whatsapp" title="Copiar el link de WhatsApp"><span class="em">💬</span><span>WhatsApp</span><small>copiar</small></button>
       <button data-link="catalogo" title="Copiar el link del catálogo"><span class="em">📲</span><span>Catálogo</span><small>copiar</small></button>
     </div>
-    <div class="buscador"><span>🔍</span><input id="q" placeholder="Buscar perfume o marca…" value="${esc(filtro.q)}" autocomplete="off"></div>
-    <div class="chips" id="chips">
-      ${['Todos','Hombre','Mujer','Unisex'].map(c => `<button class="chip ${filtro.cat===c?'on':''}" data-cat="${c}">${c}</button>`).join('')}
-      <button class="chip ${filtro.soloStock?'on':''}" data-stock="1">En stock</button>
+    <div class="stock-filtros" id="stock-filtros">
+      <div class="buscador"><span>🔍</span><input id="q" placeholder="Buscar perfume o marca…" value="${esc(filtro.q)}" autocomplete="off"></div>
+      <div class="chips" id="chips">
+        ${['Todos','Hombre','Mujer','Unisex'].map(c => `<button class="chip ${filtro.cat===c?'on':''}" data-cat="${c}">${c}</button>`).join('')}
+        <button class="chip ${filtro.soloStock?'on':''}" data-stock="1">En stock</button>
+      </div>
     </div>
     <div id="lista"></div>`;
 
@@ -4093,6 +4106,15 @@ function vistaDesdeURL(){
 }
 
 /* ---------------- navegación ---------------- */
+// Alto real del encabezado (incluye el área segura del teléfono): el buscador
+// fijo de Stock se pega justo debajo.
+function medirHeader(){
+  const h = document.querySelector('header');
+  if(h) document.documentElement.style.setProperty('--alto-header', h.offsetHeight + 'px');
+}
+window.addEventListener('resize', medirHeader);
+window.addEventListener('orientationchange', () => setTimeout(medirHeader, 250));
+
 document.querySelectorAll('nav button').forEach(b => {
   b.addEventListener('click', () => {
     cambiarVista(b.dataset.v);
@@ -4182,6 +4204,8 @@ document.addEventListener('click', ev => {
   try { history.replaceState({ kqVista: vista }, '', location.hash || '#' + vista); } catch(e){}
 
   render();
+  medirHeader();
+  setTimeout(medirHeader, 300);
   pintarEstado(!navigator.onLine);
 
   sincronizar(true).then(() => {
