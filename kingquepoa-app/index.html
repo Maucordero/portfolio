@@ -303,7 +303,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.27.0';
+const VERSION = '1.28.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1', promo:'kq_promo_v1' };
@@ -1111,6 +1111,10 @@ function cobroLocal(v){
     venta_id: 'local-' + v.id,
     cliente: v.cliente || '',
     telefono: v.telefono || '',
+    // Nombre/teléfono con los que la venta viajó a la PC (para reconocerla aunque
+    // el cliente se haya corregido desde el teléfono).
+    clienteOriginal: v.clienteOriginal || '',
+    telefonoOriginal: v.telefonoOriginal || '',
     producto: items.map(i => i.nombre).filter(Boolean).join(' + ') || (prod && prod.nombre) || '',
     producto_id: first.producto_id || '',
     foto: first.foto || (prod && prod.foto) || '',
@@ -1139,8 +1143,16 @@ function fechaCerca(a, b){
   return Math.abs(ta - tb) <= 86400000 + 1;
 }
 
+// ¿El nombre del cliente coincide? También vale el nombre ORIGINAL con el que
+// la venta pendiente viajó a la PC (si después se corrigió desde el teléfono).
+function mismoNombreCliente(a, b){
+  const buscado = norm(b.cliente);
+  return norm(a.cliente) === buscado ||
+    (!!a.clienteOriginal && norm(a.clienteOriginal) === buscado);
+}
+
 function mismaVentaCobro(a, b){
-  return norm(a.cliente) === norm(b.cliente) &&
+  return mismoNombreCliente(a, b) &&
     norm(a.producto) === norm(b.producto) &&
     Math.round(num(a.total)) === Math.round(num(b.total)) &&
     num(a.cantidad || 1) === num(b.cantidad || 1) &&
@@ -1157,7 +1169,7 @@ function cobrosTodos(){
 }
 
 function mismaVentaNum(a, b){
-  return norm(a.cliente) === norm(b.cliente) &&
+  return mismoNombreCliente(a, b) &&
     norm(a.perfume) === norm(b.perfume) &&
     Math.round(num(a.total)) === Math.round(num(b.total)) &&
     num(a.cantidad || 1) === num(b.cantidad || 1) &&
@@ -1179,6 +1191,8 @@ function ventaLocalANum(v){
     fecha: String(v.fecha_venta || '').slice(0, 10),
     cliente: v.cliente || '',
     telefono: v.telefono || '',
+    clienteOriginal: v.clienteOriginal || '',
+    telefonoOriginal: v.telefonoOriginal || '',
     referencia: v.referencia || '',
     perfume: v.perfume || (prod && prod.nombre) || '',
     cantidad: num(v.cantidad) || 1,
@@ -2577,7 +2591,7 @@ function pintarCobros(app){
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;align-items:center;align-self:center">
           ${abonosOn() && !esLocal ? `<span data-abonar="${esc(c.venta_id)}" style="font-size:20px;color:var(--gold2);cursor:pointer" title="Registrar abono">💵</span>` : ''}
-          ${!esLocal ? `<span data-editar-cobro="${esc(c.venta_id)}" style="font-size:18px;color:var(--gold2);cursor:pointer" title="Editar cobro">✎</span>` : ''}
+          <span data-editar-cobro="${esc(c.venta_id)}" style="font-size:18px;color:var(--gold2);cursor:pointer" title="${esLocal ? 'Editar cliente (esperando la PC)' : 'Editar cobro'}">✎</span>
           <span style="font-size:19px;color:var(--green);cursor:pointer" title="Mandar recordatorio">📲</span>
         </div>
       </div>`;
@@ -2594,7 +2608,9 @@ function pintarCobros(app){
       el.addEventListener('click', ev => {
         ev.stopPropagation();
         const c = lista.find(x => String(x.venta_id) === String(el.dataset.editarCobro));
-        if(c) abrirEditarCobro(c);
+        if(!c) return;
+        if(String(c.venta_id).startsWith('local-')) abrirEditarClienteLocal(c);
+        else abrirEditarCobro(c);
       });
     });
     cont.querySelectorAll('[data-cobro]').forEach(el => {
@@ -2754,6 +2770,74 @@ function abrirAbono(c){
     } catch(e){
       toast(e.message || 'No se pudo registrar', 'error');
       btn.disabled = false; btn.textContent = 'Registrar abono';
+    }
+  };
+}
+
+// Corregir el cliente de una venta que todavía está esperando a la PC.
+// No toca nada de la PC: se guarda en el teléfono y viaja como movimiento
+// "nota", así la PC lo aplica sola cuando abra la app.
+function abrirEditarClienteLocal(c){
+  if(!c) return;
+  const movId = String(c.venta_id || '').replace(/^local-/, '');
+  const venta = ventasLocales().find(x => String(x.id) === movId);
+  if(!venta) return toast('No encontré esa venta en este teléfono', 'error');
+  const wrap = $('#hoja-wrap');
+  wrap.innerHTML = `<div class="hoja-fondo"><div class="hoja">
+    <div class="agarre"></div>
+    <h2>Editar cliente</h2>
+    <div class="sub">${esc(c.producto || '')}</div>
+    <div class="aviso" style="margin:12px 0">Esta venta todavía no llegó a la computadora. El cambio queda guardado acá y se aplica solo cuando la PC abra.</div>
+    <label class="f"><span>Cliente</span><input id="el-cli" value="${esc(venta.cliente || '')}" autocomplete="off"></label>
+    <label class="f"><span>Teléfono</span><input id="el-tel" type="tel" value="${esc(venta.telefono || '')}" inputmode="tel" autocomplete="off"></label>
+    <div style="display:grid;gap:8px;margin-top:10px">
+      <button class="btn" id="el-guardar">Guardar cambios</button>
+      <button class="btn ghost" id="el-cancelar">Cancelar</button>
+    </div>
+  </div></div>`;
+  const cerrar = () => cerrarCapa();
+  registrarCapa(() => { wrap.innerHTML = ''; });
+  $('#el-cancelar').onclick = cerrar;
+  $('.hoja-fondo').addEventListener('click', e => { if(e.target.classList.contains('hoja-fondo')) cerrar(); });
+  $('#el-guardar').onclick = async () => {
+    const t = token();
+    if(!t) return toast('Falta la clave en Acceso', 'error');
+    const cliente = $('#el-cli').value.trim();
+    const telefono = $('#el-tel').value.trim();
+    if(!cliente) return toast('Falta el nombre del cliente', 'error');
+    if(!telefono) return toast('Falta el teléfono del cliente', 'error');
+    const btn = $('#el-guardar');
+    btn.disabled = true; btn.textContent = 'Guardando…';
+    try {
+      const marca = '[[KQV:' + JSON.stringify({ venta_editar_mov: movId, cliente, telefono }) + ']]';
+      const r = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'movimiento', token: t, tipo: 'nota',
+          cliente, telefono, perfume: c.producto || '',
+          nota: 'Corregir cliente del celular ' + marca,
+          dispositivo: 'app-celular'
+        })
+      });
+      const j = await r.json();
+      if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó la corrección');
+      const lista = ventasLocales();
+      const idx = lista.findIndex(x => String(x.id) === movId);
+      if(idx >= 0){
+        const l = lista[idx];
+        if(!l.clienteOriginal) l.clienteOriginal = l.cliente || '';
+        if(!l.telefonoOriginal) l.telefonoOriginal = l.telefono || '';
+        l.cliente = cliente;
+        l.telefono = telefono;
+        guardarVentasLocales(lista);
+      }
+      cerrar();
+      if(vista === 'cobros') render();
+      mostrarConfirmacionCobro(`✅ Cliente corregido · ${cliente}. Se aplica solo cuando la PC abra.`);
+    } catch(e){
+      toast(e.message || 'No se pudo guardar', 'error');
+      btn.disabled = false; btn.textContent = 'Guardar cambios';
     }
   };
 }
