@@ -275,7 +275,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.24.0';
+const VERSION = '1.25.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1', promo:'kq_promo_v1' };
@@ -466,7 +466,8 @@ function abrirAcceso(){
     </div>
   </div>`;
   document.body.appendChild(w);
-  const cerrar = () => w.remove();
+  const cerrar = () => cerrarCapa();
+  registrarCapa(() => w.remove(), 'acceso');
   w.querySelector('#ac-cancel').onclick = cerrar;
   w.querySelector('#ac-ok').onclick = async () => {
     const t = w.querySelector('#ac-clave').value.trim();
@@ -642,7 +643,7 @@ function pintarStock(app){
   pieCat.style.cssText = 'text-align:center;margin:18px 0 8px';
   pieCat.innerHTML = '<button class="btn ghost sm" id="btn-catalogo-stock">📋 Ver catálogo</button>';
   app.appendChild(pieCat);
-  pieCat.querySelector('#btn-catalogo-stock').onclick = () => { vista = 'catalogo'; render(); window.scrollTo(0,0); };
+  pieCat.querySelector('#btn-catalogo-stock').onclick = () => cambiarVista('catalogo');
   if(!esDueno()){
     const pie = document.createElement('div');
     pie.style.cssText = 'text-align:center;margin:30px 0 14px';
@@ -2187,7 +2188,8 @@ function abrirProducto(p){
     </div>
   </div>`;
 
-  const cerrar = () => { wrap.innerHTML = ''; };
+  const cerrar = () => cerrarCapa();
+  registrarCapa(() => { wrap.innerHTML = ''; });
   $('#h-cerrar').onclick = cerrar;
   $('.hoja-fondo').addEventListener('click', e => { if(e.target.classList.contains('hoja-fondo')) cerrar(); });
   $('#h-copiar').onclick = () => copiar(textoInfo(p), 'Texto copiado');
@@ -2217,7 +2219,8 @@ function abrirStockProducto(p){
       <button class="btn ghost" id="st-cancelar" style="margin-top:8px">Cancelar</button>
     </div>
   </div>`;
-  const cerrar = () => { wrap.innerHTML = ''; };
+  const cerrar = () => cerrarCapa();
+  registrarCapa(() => { wrap.innerHTML = ''; });
   $('#st-cancelar').onclick = cerrar;
   $('.hoja-fondo').addEventListener('click', e => { if(e.target.classList.contains('hoja-fondo')) cerrar(); });
   wrap.querySelectorAll('[data-st-quick]').forEach(b => {
@@ -2283,7 +2286,7 @@ async function borrarProductoCel(p){
     datos.inventario = datos.inventario.filter(x => String(x.id) !== String(p.id));
     datos.guardado = Date.now();
     guardarLS(LS.datos, datos);
-    $('#hoja-wrap').innerHTML = '';
+    cerrarCapa();
     render();
     toast('🗑 Perfume enviado a la papelera de la PC');
   } catch(e){
@@ -2443,7 +2446,7 @@ function pintarCobros(app){
       <p class="hint" style="margin:8px 0 14px">Los saldos son privados: necesitan la clave. Se pone una sola vez.</p>
       <button class="btn" id="cb-ir">Ir a Ajustes</button>
     </div>`;
-    $('#cb-ir').onclick = () => { vista = 'ajustes'; render(); };
+    $('#cb-ir').onclick = () => cambiarVista('ajustes');
     return;
   }
 
@@ -2657,7 +2660,8 @@ function abrirAbono(c){
       </div>
     </div>
   </div>`;
-  const cerrar = () => { wrap.innerHTML = ''; };
+  const cerrar = () => cerrarCapa();
+  registrarCapa(() => { wrap.innerHTML = ''; });
   const act = () => {
     const m = Math.min(num($('#ab-monto').value), saldo);
     $('#ab-resumen').textContent = m > 0 ? `Quedaría un saldo de ${money(Math.max(0, saldo - m))}` : '';
@@ -2765,7 +2769,8 @@ function abrirEditarCobro(c){
       <button class="btn ghost" id="ec-cancelar">Cancelar</button>
     </div>
   </div></div>`;
-  const cerrar = () => { wrap.innerHTML = ''; };
+  const cerrar = () => cerrarCapa();
+  registrarCapa(() => { wrap.innerHTML = ''; });
   $('#ec-cancelar').onclick = cerrar;
   $('.hoja-fondo').addEventListener('click', e => { if(e.target.classList.contains('hoja-fondo')) cerrar(); });
 
@@ -3054,7 +3059,7 @@ function pintarPromo(app){
       <p class="hint" style="margin:8px 0 14px">Esta sección es privada: entra con la clave del dueño.</p>
       <button class="btn" id="pr-ir">Ir a Ajustes</button>
     </div>`;
-    $('#pr-ir').onclick = () => { vista = 'ajustes'; render(); };
+    $('#pr-ir').onclick = () => cambiarVista('ajustes');
     return;
   }
 
@@ -3106,7 +3111,7 @@ function pintarNumeros(app){
       <p class="hint" style="margin:8px 0 14px">Esta sección es privada: entra con la clave del dueño.</p>
       <button class="btn" id="nu-ir">Ir a Ajustes</button>
     </div>`;
-    $('#nu-ir').onclick = () => { vista = 'ajustes'; render(); };
+    $('#nu-ir').onclick = () => cambiarVista('ajustes');
     return;
   }
 
@@ -4029,17 +4034,72 @@ function pintarAjustes(app){
   };
 }
 
+/* ---------------- botón Atrás / gesto del teléfono ----------------
+   En Android el gesto de atrás dispara el "atrás" del navegador.
+   Antes la app no tenía historial propio, así que el gesto la cerraba
+   entera. Ahora cada hoja (perfume, stock, abono, editar cobro, acceso)
+   deja una entrada en el historial: el gesto solo cierra la hoja.
+   Cada cambio de sección también deja una entrada, así el gesto vuelve
+   a la sección anterior en vez de salir de la app. */
+const capasAtras = [];     // hojas abiertas, en orden (la última manda)
+let atrasIgnorado = false; // el "atrás" lo provocamos nosotros al cerrar
+
+function registrarCapa(cerrar, grupo = 'hoja'){
+  const i = capasAtras.findIndex(c => c.grupo === grupo);
+  if(i >= 0){
+    // La misma ventana se reutiliza (ej. ficha -> unidades): no se apila otra.
+    capasAtras[i].cerrar = cerrar;
+    return;
+  }
+  capasAtras.push({ grupo, cerrar });
+  try { history.pushState({ kqCapa: grupo }, '', ''); } catch(e){}
+}
+
+// Cierre desde un botón: cierra la hoja y consume su entrada de historial.
+function cerrarCapa(){
+  const capa = capasAtras.pop();
+  if(!capa) return;
+  try { capa.cerrar(); } catch(e){}
+  if(history.state && history.state.kqCapa){
+    atrasIgnorado = true;
+    try { history.back(); } catch(e){ atrasIgnorado = false; }
+  }
+}
+
+// Cambia de sección y deja una entrada para que el gesto vuelva a la anterior.
+function cambiarVista(v, empujar = true){
+  if(!v) return;
+  const cambia = v !== vista;
+  vista = v;
+  try {
+    if(empujar && cambia) history.pushState({ kqVista: v }, '', '#' + v);
+    else history.replaceState({ kqVista: v }, '', '#' + v);
+  } catch(e){}
+  render();
+  window.scrollTo(0,0);
+}
+
+function vistaDesdeURL(){
+  const h = location.hash.replace('#','');
+  if(!['stock','vender','cobros','numeros','promo','cotizar','catalogo','ajustes'].includes(h)) return;
+  if(h === vista) return;
+  vista = h;
+  render();
+  if(h === 'stock' && token()) refrescarEstadoVentas();
+  if(h === 'cobros'){ refrescarEstadoVentas(); cargarCobros(false); }
+  if(h === 'numeros'){ refrescarEstadoVentas(); cargarNumeros(false); }
+  if(h === 'promo') cargarPromo(false);
+  window.scrollTo(0,0);
+}
+
 /* ---------------- navegación ---------------- */
 document.querySelectorAll('nav button').forEach(b => {
   b.addEventListener('click', () => {
-    vista = b.dataset.v;
-    try { history.replaceState(null, '', '#' + vista); } catch(e){}
-    render();
+    cambiarVista(b.dataset.v);
     if(vista === 'stock' && token()) refrescarEstadoVentas();
     if(vista === 'cobros'){ refrescarEstadoVentas(); cargarCobros(false); }
     if(vista === 'numeros'){ refrescarEstadoVentas(); cargarNumeros(false); }
     if(vista === 'promo') cargarPromo(false);
-    window.scrollTo(0,0);
   });
 });
 $('#btn-sync').addEventListener('click', () => {
@@ -4054,16 +4114,17 @@ $('#btn-sync').addEventListener('click', () => {
 
 window.addEventListener('online', () => { pintarEstado(); });
 window.addEventListener('offline', () => pintarEstado(true));
+
+// Gesto/botón Atrás: primero cierra la hoja abierta; si no hay hoja, navega.
+window.addEventListener('popstate', () => {
+  if(atrasIgnorado){ atrasIgnorado = false; return; }
+  if(capasAtras.length){ cerrarCapa(); return; }
+  vistaDesdeURL();
+});
+
 window.addEventListener('hashchange', () => {
-  const h = location.hash.replace('#','');
-  if(['stock','vender','cobros','numeros','cotizar','catalogo','ajustes'].includes(h) && h !== vista){
-    vista = h;
-    render();
-    if(h === 'stock' && token()) refrescarEstadoVentas();
-    if(h === 'cobros'){ refrescarEstadoVentas(); cargarCobros(false); }
-    if(h === 'numeros'){ refrescarEstadoVentas(); cargarNumeros(false); }
-    window.scrollTo(0,0);
-  }
+  if(capasAtras.length) return;
+  vistaDesdeURL();
 });
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
@@ -4115,6 +4176,10 @@ document.addEventListener('click', ev => {
 
   const h = location.hash.replace('#','');
   if(['stock','vender','cobros','numeros','cotizar','catalogo','ajustes'].includes(h)) vista = h;
+
+  // La primera pantalla también lleva estado, para que el gesto de atrás
+  // sepa cuál es la sección actual y no cierre la app de golpe.
+  try { history.replaceState({ kqVista: vista }, '', location.hash || '#' + vista); } catch(e){}
 
   render();
   pintarEstado(!navigator.onLine);
