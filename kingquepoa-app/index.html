@@ -303,7 +303,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.28.0';
+const VERSION = '1.29.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1', promo:'kq_promo_v1' };
@@ -987,7 +987,18 @@ function textoDocumentoCel(v, tipo){
     return t;
   }
   if(tipo !== 'proforma' && info.pagada){
-    t += `Ya está pagada (${info.terminos}): ${money(info.total)}.`;
+    t += `¡Gracias, ${nombre}! Ya está pagada (${info.terminos}): ${money(info.total)}.`;
+    return t;
+  }
+  // Último pago recibido: el pago de hoy (no el abono inicial ni la suma).
+  const ultimoPago = num(v.ultimo_pago);
+  const ultimoFecha = String(v.ultimo_pago_fecha || '').slice(0, 10);
+  if(tipo !== 'proforma' && ultimoPago > 0){
+    t += `¡Gracias, ${nombre}! Ya abonaste ${money(ultimoPago)}${ultimoFecha ? ' el ' + fmtFechaCorta(ultimoFecha) : ''}. `;
+    const prox = info.prox;
+    t += prox
+      ? `Te queda un saldo de ${money(info.saldo)} para el ${fmtFechaCorta(prox.vencimiento)}.`
+      : `Te queda un saldo de ${money(info.saldo)}.`;
     return t;
   }
   const pagosTxt = detallePagosCel(info.pagos, info.pagosN);
@@ -2391,7 +2402,13 @@ function aplicarAbonosPendientes(lista){
     const total = noAplicados.reduce((s,a) => s + num(a.monto), 0);
     const saldo = Math.max(0, num(c.saldo) - total);
     if(saldo > 0.5){
-      out.push(Object.assign({}, c, { saldo, abonado: num(c.abonado) + total }));
+      const ult = noAplicados.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0)).pop();
+      out.push(Object.assign({}, c, {
+        saldo,
+        abonado: num(c.abonado) + total,
+        ultimo_pago: ult ? num(ult.monto) : num(c.ultimo_pago),
+        ultimo_pago_fecha: (ult && ult.fecha) ? String(ult.fecha).slice(0, 10) : (c.ultimo_pago_fecha || ''),
+      }));
       quedan.push(...noAplicados);
     }
   }
@@ -2756,14 +2773,19 @@ function abrirAbono(c){
       const restante = Math.max(0, saldo - monto);
       // Guarda el abono como pendiente hasta que la PC lo refleje en COBROS,
       // así la venta no reaparece con el saldo viejo al refrescar.
-      abonosPendientes.push({ venta_id: Number(c.venta_id), monto, saldoAntes: saldo, ts: Date.now() });
+      abonosPendientes.push({ venta_id: Number(c.venta_id), monto, saldoAntes: saldo, fecha, ts: Date.now() });
       guardarLS(LS.abonosPend, abonosPendientes);
       // Refleja el abono de inmediato en el teléfono: si terminó de pagar,
       // la venta sale de Por cobrar y se ofrece el agradecimiento en el acto.
       const idx = cobros.findIndex(x => String(x.venta_id) === String(c.venta_id));
       if(idx >= 0){
         if(restante <= 0.5) cobros.splice(idx, 1);
-        else cobros[idx] = Object.assign({}, cobros[idx], { saldo: restante, abonado: num(cobros[idx].abonado) + monto });
+        else cobros[idx] = Object.assign({}, cobros[idx], {
+          saldo: restante,
+          abonado: num(cobros[idx].abonado) + monto,
+          ultimo_pago: monto,
+          ultimo_pago_fecha: String(fecha).slice(0, 10),
+        });
         guardarLS(LS.cobros, { cobros, guardado: Date.now() });
       }
       if(vista === 'cobros') render();
