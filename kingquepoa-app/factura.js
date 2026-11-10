@@ -40,6 +40,7 @@ async function facturaPagoUnicoCel(datos, opts = {}){
   const envio = Math.max(0, Math.round(Number(opts.envio) || 0));
   const saldoOpt = (datos && datos.saldo != null) ? datos.saldo : opts.saldo;
   const saldo = Math.max(0, Math.round(Number(saldoOpt) || 0));
+  const abonado = Math.max(0, Math.round(Number(opts.abonado) || 0));
   const terminos = String(opts.terminos || "Contado");
   const cuotas = Array.isArray(opts.cuotas) ? opts.cuotas.filter(c => Math.round(Number(c && c.monto) || 0) > 0) : null;
   const titulo = String(opts.titulo || (proforma ? "PROFORMA" : "FACTURA"));
@@ -270,6 +271,23 @@ async function facturaPagoUnicoCel(datos, opts = {}){
     ctx.textAlign = "right"; ctx.fillStyle = TEXTO; ctx.font = "bold 22px " + FUENTE;
     ctx.fillText(money(totalFinal), RIGHT - 18, y);
     y += 38;
+
+    // Abonado: lo que ya pagó del total (incluye los abonos posteriores a la venta).
+    if (abonado > 0 && !pagada && abonado < totalFinal - 0.5){
+      const t1 = "Abonado ", t2 = money(abonado), t3 = " de " + money(totalFinal);
+      ctx.textAlign = "left";
+      ctx.fillStyle = GRIS; ctx.font = "20px " + FUENTE;
+      const w1 = ctx.measureText(t1).width;
+      ctx.font = "bold 20px " + FUENTE;
+      const w2 = ctx.measureText(t2).width;
+      ctx.fillStyle = GRIS; ctx.font = "20px " + FUENTE;
+      ctx.fillText(t1, M + 64, y);
+      ctx.fillStyle = DORADO; ctx.font = "bold 20px " + FUENTE;
+      ctx.fillText(t2, M + 64 + w1, y);
+      ctx.fillStyle = GRIS; ctx.font = "20px " + FUENTE;
+      ctx.fillText(t3, M + 64 + w1 + w2, y);
+      y += 30;
+    }
   } else {
     // --- Caja de pago único ---
     const boxH = 104;
