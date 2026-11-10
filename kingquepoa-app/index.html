@@ -303,7 +303,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.29.0';
+const VERSION = '1.30.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1', promo:'kq_promo_v1' };
@@ -941,6 +941,42 @@ function datosFacturaCel(v){
       tipo: esAbono ? 'abono' : (c.tipo === 'prima' ? 'prima' : 'pago'),
     };
   });
+  // Abonos REALES recibidos (la PC los manda en COBROS.pagos): que se vean como filas pagadas.
+  // Si el cliente dio ₡5.000 después del abono inicial, tiene que aparecer en la factura.
+  const pagosReales = (() => {
+    let p = v.pagos;
+    if(typeof p === 'string'){ try { p = JSON.parse(p); } catch(e){ p = []; } }
+    return (Array.isArray(p) ? p : [])
+      .map(x => ({
+        monto: num(x && (x.m != null ? x.m : x.monto)),
+        fecha: String((x && (x.f || x.fecha)) || '').slice(0, 10),
+      }))
+      .filter(x => x.monto > 0.5 && x.fecha)
+      .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  })();
+  if(pagosReales.length){
+    // La fecha de una fila ya pagada es la del pago real (no la del vencimiento).
+    const usados = new Set();
+    for(const f of filas){
+      if(!f.pagada) continue;
+      const i = pagosReales.findIndex((p, idx) => !usados.has(idx) && Math.abs(p.monto - f.monto) < 0.5);
+      if(i >= 0){ f.vencimiento = pagosReales[i].fecha; usados.add(i); }
+    }
+    // Pagos que todavía no están representados por una fila pagada → filas extra.
+    const yaMostrado = filas.filter(f => f.pagada).reduce((s, f) => s + num(f.monto), 0);
+    let acum = 0;
+    const extras = [];
+    for(const p of pagosReales){
+      const desde = acum;
+      acum += p.monto;
+      const extra = Math.max(0, acum - Math.max(desde, yaMostrado));
+      if(extra > 0.5) extras.push({ etiqueta: 'Abono', vencimiento: p.fecha, monto: Math.round(extra), pagada: true, tipo: 'abono' });
+    }
+    if(extras.length){
+      const i = filas.findIndex(f => !f.pagada);
+      filas.splice(i < 0 ? filas.length : i, 0, ...extras);
+    }
+  }
   const abonoFila = filas.find(c => /^(Abono|Prima)/i.test(c.etiqueta)) || null;
   const pagos = filas.filter(c => !/^(Abono|Prima)/i.test(c.etiqueta));
   const pagosN = pagos.length;
@@ -1021,7 +1057,19 @@ function textoDocumentoCel(v, tipo){
 function textoCobroCel(v){
   const info = datosFacturaCel(v);
   const prox = info.prox;
-  return `¡Hola ${primerNombreDe(v.cliente || v.nombre || '')}! 👋\nEsto es un recordatorio de tu pago ${porPerfumesCel(v)} para el ${fmtFechaCorta(prox ? prox.vencimiento : info.vencimiento)}: ${money(prox ? prox.monto : info.saldo)}.`;
+  const nombre = primerNombreDe(v.cliente || v.nombre || '');
+  let t = `¡Hola ${nombre}! 👋\n`;
+  const ultimoPago = num(v.ultimo_pago);
+  const ultimoFecha = String(v.ultimo_pago_fecha || '').slice(0, 10);
+  const abonado = num(v.abonado);
+  const total = num(v.total);
+  if(ultimoPago > 0){
+    t += `Ya abonaste ${money(ultimoPago)}${ultimoFecha ? ' el ' + fmtFechaCorta(ultimoFecha) : ''}. `;
+  } else if(abonado > 0 && total > abonado + 0.5){
+    t += `Llevás abonado ${money(abonado)} de ${money(total)}. `;
+  }
+  t += `Esto es un recordatorio de tu pago ${porPerfumesCel(v)} para el ${fmtFechaCorta(prox ? prox.vencimiento : info.vencimiento)}: ${money(prox ? prox.monto : info.saldo)}.`;
+  return t;
 }
 
 function productoDeVentaCel(v){
@@ -1073,6 +1121,7 @@ async function facturaCelDocumento(v, tipo){
     cuotas: info.filas,
     vencimiento: info.vencimiento,
     saldo: info.saldo,
+    abonado: num(v.abonado) || Math.max(0, info.total - info.saldo),
     config: datos.config || {},
     logo: './logo.png',
   };
