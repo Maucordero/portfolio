@@ -303,7 +303,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.30.0';
+const VERSION = '1.31.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1', promo:'kq_promo_v1' };
@@ -728,6 +728,7 @@ function pintarLista(){
         <div class="fila" style="margin-top:6px">
           <span class="stock ${st<=0?'cero':''}">${st>0 ? st + ' en stock' : 'Agotado'}</span>
           <span class="tag">${esc(p.categoria||'—')}</span>
+          ${(costo && costo.distribuidor_tel) ? `<span class="tag" data-dist="${esc(p.id)}" title="Pedirle a ${esc(costo.distribuidor||'el distribuidor')}" style="${st<=0 ? 'color:var(--red);border-color:rgba(240,87,93,.35)' : ''}">📞 ${st<=0 ? 'Pedir' : 'Distribuidor'}</span>` : ''}
         </div>
       </div>
     </div>`;
@@ -737,6 +738,14 @@ function pintarLista(){
     el.addEventListener('click', () => {
       const p = datos.inventario.find(x => String(x.id) === String(el.dataset.id));
       if(p) abrirProducto(p);
+    });
+  });
+  // El 📞 de la tarjeta: pide el perfume al distribuidor sin abrir la ficha.
+  cont.querySelectorAll('[data-dist]').forEach(el => {
+    el.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const p = datos.inventario.find(x => String(x.id) === String(el.dataset.dist));
+      if(p) contactarDistribuidorCel(p, costoDe(p), stockLocalDe(p));
     });
   });
 }
@@ -2281,10 +2290,14 @@ function abrirProducto(p){
         <span class="tag" style="color:var(--blue);border-color:rgba(90,169,255,.35)">💵 Costo ${usd(costo.costo_usd)} · ${money(costo.costo_crc)}</span>
         <span class="tag" style="color:${mg.ganancia >= 0 ? 'var(--green)' : 'var(--red)'}">Ganancia ${money(mg.ganancia)} · ${mg.margen.toFixed(1)}%</span>
       </div>` : ''}
+      ${costo && costo.distribuidor ? `<div class="fila" style="margin:-6px 0 10px;justify-content:center">
+        <span class="tag">🏬 ${esc(costo.distribuidor)}${costo.distribuidor_tel ? ' · ' + esc(costo.distribuidor_tel) : ''}</span>
+      </div>` : ''}
       ${p.descripcion ? `<div class="cuerpo">${esc(p.descripcion)}</div>` : ''}
       <div class="acciones">
         <button class="btn verde" id="h-wa">📲 Enviar imagen por WhatsApp</button>
         <button class="btn ghost" id="h-copiar">📋 Copiar el texto</button>
+        ${costo && costo.distribuidor_tel ? `<button class="btn ghost" id="h-dist" style="${st <= 0 ? 'border-color:var(--red);color:var(--red)' : ''}">📞 ${st <= 0 ? 'Pedirle al distribuidor' : 'Contactar al distribuidor'}</button>` : ''}
         ${esDueno() ? `<button class="btn ghost" id="h-stock">➕ Agregar unidades</button>
         <button class="btn rojo" id="h-borrar">🗑 Borrar perfume</button>` : ''}
         <button class="btn ghost" id="h-cerrar">Cerrar</button>
@@ -2300,6 +2313,18 @@ function abrirProducto(p){
   $('#h-wa').onclick = () => enviarImagenWhatsApp(p);
   const bs = $('#h-stock'); if(bs) bs.onclick = () => abrirStockProducto(p);
   const bb = $('#h-borrar'); if(bb) bb.onclick = () => borrarProductoCel(p);
+  const bd = $('#h-dist'); if(bd) bd.onclick = () => contactarDistribuidorCel(p, costo, st);
+}
+
+// Pedirle el perfume al distribuidor por WhatsApp (cuando no hay stock).
+function contactarDistribuidorCel(p, costo, st){
+  const tel = String((costo && costo.distribuidor_tel) || '').trim();
+  if(!tel){ toast('Ese perfume no tiene el teléfono del distribuidor', 'error'); return; }
+  const saludo = '¡Hola' + (costo.distribuidor ? ' ' + costo.distribuidor : '') + '! 👋\n';
+  const txt = (st <= 0)
+    ? saludo + 'Se me acabó *' + p.nombre + '*. ¿Tenés disponible? Me interesa reponer.\nGracias 🙌'
+    : saludo + '¿Tenés disponible *' + p.nombre + '*? Me interesa comprar.\nGracias 🙌';
+  abrirWhatsApp(txt, tel);
 }
 
 // Sumar o quitar unidades del stock (se manda a la PC como ajuste y ella lo aplica sola).
