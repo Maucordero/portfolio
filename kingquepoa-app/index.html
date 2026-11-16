@@ -303,7 +303,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.32.1';
+const VERSION = '1.32.2';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1', promo:'kq_promo_v1' };
@@ -3116,10 +3116,15 @@ function abrirEditarClienteLocal(c){
 // Editar un cobro existente: cliente, teléfono y plan de pagos.
 function abrirEditarCobro(c){
   if(!c) return;
-  let total = num(c.total);
+  const totalBase = num(c.total);
+  const pagadoBase = num(c.abonado);
+  const saldoBase = Math.max(0, num(c.saldo));
+  const conPagos = pagadoBase > 0.5;
+  let total = totalBase;
+  let saldo = saldoBase;
   let tipo = String(c.tipo_pago || 'pagos');
   const recActual = recargoDe(tipo);
-  const baseTotal = recActual > 0 ? total / (1 + recActual/100) : total;
+  const baseTotal = recActual > 0 ? totalBase / (1 + recActual/100) : totalBase;
   let filas = [];
   try { filas = JSON.parse(c.cuotas || '[]'); } catch(e){ filas = []; }
   filas = (Array.isArray(filas) ? filas : []).map(x => ({
@@ -3129,8 +3134,10 @@ function abrirEditarCobro(c){
     tipo: x.t || x.tipo || 'abono',
   }));
   if(!filas.length){
-    filas = [{ fecha: String(c.proximo || '').slice(0,10) || proximaCuotaISO(), monto: total, pagada: false, tipo: 'abono' }];
+    filas = [{ fecha: String(c.proximo || '').slice(0,10) || proximaCuotaISO(), monto: totalBase, pagada: false, tipo: 'abono' }];
   }
+  let nuevos = [];   // perfumes que se agregan a la cuenta
+  let primeraFecha = (filas.find(f => !f.pagada) || {}).fecha || String(c.proximo || '').slice(0,10) || proximaCuotaISO();
   const wrap = $('#hoja-wrap');
   wrap.innerHTML = `<div class="hoja-fondo"><div class="hoja">
     <div class="agarre"></div>
@@ -3147,6 +3154,19 @@ function abrirEditarCobro(c){
       <option value="un_pago_abono">A 1 pago con abono (sin recargo)</option>
       <option value="un_pago_interes">A 1 pago con interés (15%)</option>
     </select></label>
+    <div class="aviso" id="ec-info" style="margin:10px 0"></div>
+    ${conPagos ? `
+    <div class="titulo" style="margin:10px 0 6px">➕ Agregar perfume a esta cuenta</div>
+    <label class="f"><span>Perfume</span>
+      <input id="ec-prod" list="ec-prod-list" placeholder="Escribí el nombre…" autocomplete="off">
+      <datalist id="ec-prod-list">${datos.inventario.filter(p => stockLocalDe(p) > 0).map(p => `<option value="${esc(p.nombre)}">${esc(money(p.precio_crc))}</option>`).join('')}</datalist>
+    </label>
+    <div style="display:grid;grid-template-columns:1fr 86px;gap:8px;align-items:end">
+      <button class="btn ghost sm" id="ec-prod-add" type="button">➕ Agregar a la cuenta</button>
+      <label class="f"><span>Cant.</span><input id="ec-prod-cant" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
+    </div>
+    <div id="ec-nuevos" class="hint" style="margin:6px 0"></div>
+    ` : ""}
     <div class="titulo" style="margin:10px 0 6px">Fechas y montos</div>
     <div id="ec-plan"></div>
     <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
@@ -3164,29 +3184,90 @@ function abrirEditarCobro(c){
   $('#ec-cancelar').onclick = cerrar;
   $('.hoja-fondo').addEventListener('click', e => { if(e.target.classList.contains('hoja-fondo')) cerrar(); });
 
+  const nuevosContado = () => nuevos.reduce((s, i) => s + num(i.precio_crc) * num(i.cantidad), 0);
+  const totalNuevos = () => mil(nuevosContado() * (1 + recargoDe(tipo) / 100));
+  // Lo que hay que repartir entre los pagos pendientes: en una cuenta con pagos
+  // es el REMANENTE + los perfumes nuevos (no el total viejo).
+  const objetivoPend = () => conPagos ? saldo : Math.max(0, total - pagadoBase);
+  const primeraPend = () => (filas.find(f => !f.pagada) || {}).fecha || primeraFecha;
+
+  const info = () => {
+    const el = $('#ec-info');
+    if(el){
+      const rec = recargoDe(tipo);
+      let html = `<b>Pendiente:</b> ${money(conPagos ? saldoBase : totalBase)} · <b>Ya pagado:</b> ${money(pagadoBase)}`;
+      if(nuevos.length){
+        const n = planDe(tipo);
+        html += `<br><b>Perfume${nuevos.length === 1 ? '' : 's'} nuevo${nuevos.length === 1 ? '' : 's'}:</b> ${money(totalNuevos())} (${n} pago${n === 1 ? '' : 's'}${rec > 0 ? ` +${rec}%` : ''})`;
+        html += `<br><b>Nuevo pendiente:</b> ${money(saldo)}`;
+      }
+      el.innerHTML = html;
+    }
+    const cont = $('#ec-nuevos');
+    if(cont){
+      cont.innerHTML = nuevos.map((n, i) => `<div style="display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)">
+        <span style="flex:1;min-width:0">${esc(n.nombre)} × ${n.cantidad}</span>
+        <b>${money(num(n.precio_crc) * n.cantidad)}</b>
+        <span data-ec-quitar="${i}" style="color:var(--red);cursor:pointer;padding:0 4px">✕</span>
+      </div>`).join('') || '<span class="muted">Todavía no agregaste ningún perfume.</span>';
+      cont.querySelectorAll('[data-ec-quitar]').forEach(b => {
+        b.onclick = () => {
+          nuevos.splice(+b.dataset.ecQuitar, 1);
+          rearmar(primeraPend());
+          render();
+        };
+      });
+    }
+  };
+
   const actualizarSuma = () => {
-    const s = filas.reduce((a,f)=>a+(num(f.monto)||0),0);
-    const dif = Math.round(total - s);
+    const s = filas.filter(f => !f.pagada).reduce((a, f) => a + (num(f.monto) || 0), 0);
+    const dif = Math.round(objetivoPend() - s);
     const el = $('#ec-suma'), aviso = $('#ec-aviso');
     if(el){
-      el.textContent = dif === 0 ? `Suma ${money(s)} · cuadra ✓` : `Suma ${money(s)} · ${dif>0?'falta':'sobra'} ${money(Math.abs(dif))}`;
+      el.textContent = dif === 0 ? `Pendiente en el plan ${money(s)} · cuadra ✓` : `Pendiente en el plan ${money(s)} · ${dif > 0 ? 'falta' : 'sobra'} ${money(Math.abs(dif))}`;
       el.style.color = dif === 0 ? 'var(--green)' : 'var(--gold2)';
     }
     if(aviso) aviso.textContent = dif === 0 ? '' : 'Al guardar se ajusta el último pago pendiente.';
   };
+
+  // Rehace SOLO los pagos pendientes (los pagados no se tocan). En una cuenta
+  // con pagos, el total viejo queda congelado y solo se suma el perfume nuevo.
+  const rearmar = (fechaBase) => {
+    const planN = planDe(tipo) || 1;
+    if(conPagos){
+      total = totalBase + totalNuevos();
+      saldo = saldoBase + totalNuevos();
+    } else {
+      const rec = recargoDe(tipo);
+      total = mil(baseTotal * (1 + rec / 100)) + totalNuevos();
+      saldo = Math.max(0, total - pagadoBase);
+    }
+    const pagadas = filas.filter(f => f.pagada);
+    const fechas = cuotasProg(fechaBase || primeraPend(), planN);
+    const partes = repartirMonto(objetivoPend(), planN);
+    filas = [...pagadas, ...fechas.map((f, i) => ({ fecha: f, monto: partes[i], pagada: false, tipo: 'abono' }))];
+  };
+
   const render = () => {
     const cont = $('#ec-plan');
-    cont.innerHTML = filas.map((f,i) => `<div style="display:grid;grid-template-columns:64px 1fr 96px;gap:6px;align-items:center;margin-bottom:6px">
-      <span style="font-size:12px;color:var(--muted)">${f.pagada ? 'Pagada' : etiquetaPagoCel(i+1)}</span>
-      <input type="date" data-ec-fecha="${i}" value="${esc(f.fecha)}" style="padding:8px" ${f.pagada ? 'disabled' : ''}>
-      <input type="number" min="0" step="500" data-ec-monto="${i}" value="${Math.round(f.monto)}" inputmode="numeric" style="padding:8px;text-align:right" ${f.pagada ? 'disabled' : ''}>
-    </div>`).join('');
+    let nPend = 0;
+    cont.innerHTML = filas.map((f, i) => {
+      if(!f.pagada) nPend++;
+      const et = f.pagada ? 'Pagada' : etiquetaPagoCel(nPend);
+      return `<div style="display:grid;grid-template-columns:64px 1fr 96px;gap:6px;align-items:center;margin-bottom:6px">
+        <span style="font-size:12px;color:var(--muted)">${et}</span>
+        <input type="date" data-ec-fecha="${i}" value="${esc(f.fecha)}" style="padding:8px" ${f.pagada ? 'disabled' : ''}>
+        <input type="number" min="0" step="500" data-ec-monto="${i}" value="${Math.round(f.monto)}" inputmode="numeric" style="padding:8px;text-align:right" ${f.pagada ? 'disabled' : ''}>
+      </div>`;
+    }).join('');
+    info();
     actualizarSuma();
     cont.querySelectorAll('[data-ec-fecha]').forEach(inp => {
-      inp.onchange = () => { const i=+inp.dataset.ecFecha; if(filas[i]) filas[i].fecha = inp.value; };
+      inp.onchange = () => { const i = +inp.dataset.ecFecha; if(filas[i]) filas[i].fecha = inp.value; };
     });
     cont.querySelectorAll('[data-ec-monto]').forEach(inp => {
-      inp.oninput = () => { const i=+inp.dataset.ecMonto; if(filas[i]) filas[i].monto = Math.max(0, Math.round(num(inp.value))); actualizarSuma(); };
+      inp.oninput = () => { const i = +inp.dataset.ecMonto; if(filas[i]) filas[i].monto = Math.max(0, Math.round(num(inp.value))); actualizarSuma(); };
     });
   };
   render();
@@ -3195,30 +3276,34 @@ function abrirEditarCobro(c){
     selTipo.value = tipo;
     selTipo.onchange = () => {
       tipo = selTipo.value;
-      const recNuevo = recargoDe(tipo);
-      total = mil(baseTotal * (1 + recNuevo/100));
-      const pagadas = filas.filter(f => f.pagada);
-      const pagado = pagadas.reduce((s,f)=>s+num(f.monto),0);
-      const resto = Math.max(0, total - pagado);
-      const planN = planDe(tipo);
-      const fechaBase = (filas.find(f => !f.pagada) || {}).fecha || proximaCuotaISO();
-      if(planN > 0){
-        const fechas = cuotasProg(fechaBase, planN);
-        const partes = repartirMonto(resto, planN);
-        filas = [...pagadas, ...fechas.map((f,i)=>({ fecha:f, monto:partes[i], pagada:false, tipo:'abono' }))];
-      } else {
-        filas = [...pagadas, { fecha: fechaBase, monto: resto, pagada: false, tipo:'abono' }];
-      }
+      rearmar(primeraPend());
+      render();
+    };
+  }
+  const btnAdd = $('#ec-prod-add');
+  if(btnAdd){
+    btnAdd.onclick = () => {
+      const q = norm($('#ec-prod').value);
+      const p = datos.inventario.find(x => norm(x.nombre) === q)
+        || datos.inventario.find(x => q && norm(x.nombre).includes(q));
+      if(!p) return toast('Elegí un perfume de la lista', 'error');
+      if(nuevos.some(n => String(n.producto_id) === String(p.id))) return toast('Ese perfume ya está agregado', 'error');
+      if(String(c.producto || '').split(' + ').some(n => norm(n) === norm(p.nombre))) return toast('Ese perfume ya está en la cuenta', 'error');
+      const cant = Math.max(1, Math.round(num($('#ec-prod-cant').value) || 1));
+      const st = stockLocalDe(p);
+      if(cant > st) return toast(`Solo hay ${st} de ${p.nombre}`, 'error');
+      nuevos.push({ producto_id: p.id, nombre: p.nombre, cantidad: cant, precio_crc: num(p.precio_crc) });
+      $('#ec-prod').value = '';
+      $('#ec-prod-cant').value = 1;
+      rearmar(primeraPend());
       render();
     };
   }
   $('#ec-repartir').onclick = () => {
     const pendientes = filas.filter(f => !f.pagada);
     if(!pendientes.length) return;
-    const pagado = filas.filter(f => f.pagada).reduce((s,f)=>s+num(f.monto),0);
-    const resto = Math.max(0, total - pagado);
-    const base = Math.floor(resto / pendientes.length);
-    pendientes.forEach((f,k)=>{ f.monto = k === pendientes.length-1 ? resto - base*(pendientes.length-1) : base; });
+    const partes = repartirMonto(objetivoPend(), pendientes.length);
+    pendientes.forEach((f, k) => { f.monto = partes[k]; });
     render();
   };
   $('#ec-guardar').onclick = async () => {
@@ -3243,13 +3328,19 @@ function abrirEditarCobro(c){
     const btn = $('#ec-guardar');
     btn.disabled = true; btn.textContent = 'Guardando…';
     try {
-      const marca = '[[KQV:' + JSON.stringify({ venta_editar: 1, venta_id: Number(c.venta_id), cliente, telefono, tipo_pago: tipo, cuotas: nuevas }) + ']]';
+      const marcaObj = { venta_editar: 1, venta_id: Number(c.venta_id), cliente, telefono, tipo_pago: tipo, cuotas: nuevas };
+      if(conPagos){
+        // La PC congela el total viejo y solo suma el perfume nuevo con su recargo.
+        marcaObj.total_override = total;
+        if(nuevos.length) marcaObj.items_nuevos = nuevos.map(n => ({ producto_id: n.producto_id, cantidad: n.cantidad }));
+      }
+      const marca = '[[KQV:' + JSON.stringify(marcaObj) + ']]';
       const r = await fetch(API, {
         method:'POST',
         headers:{ 'Content-Type':'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action:'movimiento', token:t, tipo:'nota',
-          cliente, telefono, perfume: c.producto || '',
+          cliente, telefono, perfume: [c.producto, ...nuevos.map(n => n.nombre)].filter(Boolean).join(' + ') || '',
           nota: 'Editar cobro ' + marca,
           dispositivo:'app-celular'
         })
@@ -3258,14 +3349,17 @@ function abrirEditarCobro(c){
       if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó la edición');
       const idx = cobros.findIndex(x => String(x.venta_id) === String(c.venta_id));
       if(idx >= 0){
-        const prox = nuevas.find((f,i) => !filas[i].pagada);
+        const prox = nuevas.find(f => !f.pagada);
         const abonadoNuevo = nuevas.filter(f => f.pagada).reduce((a,f)=>a+f.monto,0);
+        const nombreProducto = [c.producto, ...nuevos.map(n => n.nombre)].filter(Boolean).join(' + ');
         cobros[idx] = Object.assign({}, cobros[idx], {
           cliente, telefono, tipo_pago: tipo, total,
           abonado: abonadoNuevo, saldo: Math.max(0, total - abonadoNuevo),
+          producto: nombreProducto || cobros[idx].producto,
           cuotas: JSON.stringify(nuevas.map((f,i)=>({ n:i+1, f:f.fecha, m:f.monto, p: f.pagada ? 1 : 0, t:f.tipo }))),
           proximo: prox ? prox.fecha : '',
           proximo_monto: prox ? prox.monto : 0,
+          pendientes: nuevas.filter(f => !f.pagada).length,
         });
         guardarLS(LS.cobros, { cobros, guardado: Date.now() });
       }
