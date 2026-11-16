@@ -303,7 +303,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.32.2';
+const VERSION = '1.32.3';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1', promo:'kq_promo_v1' };
@@ -953,6 +953,16 @@ function datosFacturaCel(v){
       tipo: (esAbono || c.parcial) ? 'abono' : (esPrima ? 'prima' : 'pago'),
     };
   });
+  // Proforma de una cuenta editada: los pagos ya hechos se ven "Pagado" y los
+  // pendientes se numeran desde 1 (no cuentan los viejos).
+  if (v.proformaLabels) {
+    let nPro = 0;
+    for (const f of filas) {
+      if (/^(Abono|Prima)/i.test(f.etiqueta)) continue;
+      if (f.pagada) f.etiqueta = 'Pagado';
+      else { nPro++; f.etiqueta = etiquetaPagoCel(nPro); }
+    }
+  }
   // Abonos REALES recibidos (la PC los manda en COBROS.pagos): que se vean como filas pagadas.
   // Si el cliente dio ₡5.000 después del abono inicial, tiene que aparecer en la factura.
   const pagosReales = (() => {
@@ -1049,7 +1059,17 @@ function textoDocumentoCel(v, tipo){
       : `Te queda un saldo de ${money(info.saldo)}.`;
     return t;
   }
-  const pagosTxt = detallePagosCel(info.pagos, info.pagosN);
+  // Proforma de una cuenta con pagos: usar SOLO lo pendiente (no contar lo ya pagado).
+  const pagosPendCel = (info.pagos || []).filter(p => !p.pagada);
+  const pagosTxt = detallePagosCel(pagosPendCel, pagosPendCel.length);
+  const abonadoInfo = Math.max(0, num(v.abonado) || (info.total - info.saldo));
+  if(tipo === 'proforma' && abonadoInfo > 0.5){
+    t += `Ya abonaste ${money(abonadoInfo)}. `;
+    t += pagosPendCel.length
+      ? `Te queda un saldo de ${money(info.saldo)} en ${pagosTxt}.`
+      : 'Tu cuenta quedó al día.';
+    return t;
+  }
   if(info.abonoFila && !info.abonoFila.pagada){
     const esPrima = info.abonoFila.etiqueta.toLowerCase() === 'prima';
     t += `Queda en ${esPrima ? 'una prima' : 'un abono'} de ${money(info.abonoFila.monto)} el ${fmtFechaCorta(info.abonoFila.vencimiento)}`;
@@ -1128,8 +1148,14 @@ async function facturaCelDocumento(v, tipo){
     proforma,
     pagada: tipo === 'recordatorio' ? false : info.pagada,
     titulo: proforma ? 'PROFORMA' : (tipo === 'recordatorio' ? 'RECORDATORIO DE PAGO' : 'FACTURA'),
-    numero: numBase ? 'KQ' + String(numBase).padStart(5, '0') : undefined,
-    terminos: info.terminos,
+    numero: proforma ? undefined : (numBase ? 'KQ' + String(numBase).padStart(5, '0') : undefined),
+    terminos: proforma
+      ? (() => {
+          const hayAbonoPend = !!(info.abonoFila && !info.abonoFila.pagada);
+          const nPend = (info.pagos || []).filter(p => !p.pagada).length;
+          return nPend ? `${hayAbonoPend ? 'Abono + ' : ''}${nPend} pago${nPend === 1 ? '' : 's'}` : 'Pagado';
+        })()
+      : info.terminos,
     cuotas: info.filas,
     vencimiento: info.vencimiento,
     saldo: info.saldo,
@@ -1138,8 +1164,13 @@ async function facturaCelDocumento(v, tipo){
     logo: './logo.png',
   };
   if(proforma){
-    opts.etiquetaCabecera = info.planN > 0 ? 'A PAGOS' : 'TOTAL A PAGAR';
-    opts.montoCabecera = info.total;
+    if(v.proformaSaldo){
+      opts.etiquetaCabecera = 'SALDO';
+      opts.montoCabecera = info.saldo;
+    } else {
+      opts.etiquetaCabecera = info.planN > 0 ? 'A PAGOS' : 'TOTAL A PAGAR';
+      opts.montoCabecera = info.total;
+    }
   } else if(tipo === 'recordatorio'){
     opts.etiquetaCabecera = 'PRÓXIMO PAGO';
     opts.montoCabecera = info.prox ? info.prox.monto : info.saldo;
@@ -3175,6 +3206,7 @@ function abrirEditarCobro(c){
     </div>
     <div class="hint" id="ec-aviso"></div>
     <div style="display:grid;gap:8px;margin-top:10px">
+      <button class="btn ghost" id="ec-proforma" type="button">📄 Proforma</button>
       <button class="btn" id="ec-guardar">Guardar cambios</button>
       <button class="btn ghost" id="ec-cancelar">Cancelar</button>
     </div>
@@ -3305,6 +3337,42 @@ function abrirEditarCobro(c){
     const partes = repartirMonto(objetivoPend(), pendientes.length);
     pendientes.forEach((f, k) => { f.monto = partes[k]; });
     render();
+  };
+  const btnPro = $('#ec-proforma');
+  if(btnPro) btnPro.onclick = async () => {
+    const nombreCli = $('#ec-cli').value.trim() || c.cliente || '';
+    const tel = $('#ec-tel').value.trim() || c.telefono || '';
+    // La cuenta vieja va como una línea con su precio de contado aproximado
+    // (el teléfono no tiene el detalle de precios de la venta original).
+    const oldNombres = String(c.producto || '').split(' + ').map(s => s.trim()).filter(Boolean);
+    const nViejos = Math.max(1, oldNombres.length);
+    const recViejo = recargoDe(String(c.tipo_pago || 'pagos'));
+    const oldContado = Math.round((totalBase / (1 + recViejo / 100)) / 1000) * 1000;
+    const items = [
+      ...(oldNombres.length ? oldNombres : [String(c.producto || 'Perfume')]).map(n => ({
+        nombre: n, cantidad: 1, precio_unitario_crc: Math.round(oldContado / nViejos),
+      })),
+      ...nuevos.map(n => ({ nombre: n.nombre, cantidad: n.cantidad, precio_unitario_crc: n.precio_crc })),
+    ];
+    const vPro = {
+      venta_id: Number(c.venta_id),
+      cliente: nombreCli, telefono: tel,
+      producto: [c.producto, ...nuevos.map(n => n.nombre)].filter(Boolean).join(' + '),
+      cantidad: (num(c.cantidad) || 1) + nuevos.reduce((s, n) => s + n.cantidad, 0),
+      total, abonado: pagadoBase, saldo, tipo_pago: tipo,
+      fecha_venta: hoyISO(),
+      items,
+      cuotas: JSON.stringify(filas.map((f, i) => ({ n: i + 1, f: f.fecha, m: Math.round(num(f.monto)), p: f.pagada ? 1 : 0, t: f.tipo || 'abono' }))),
+      pagos: c.pagos,
+      proformaSaldo: true,
+      proformaLabels: true,
+    };
+    try {
+      toast('📄 Armando la proforma…');
+      const r = await facturaCelDocumento(vPro, 'proforma');
+      await entregarImagen(r.png, '📄 Proforma copiada — pegala en el chat', r.texto);
+      if(tel) setTimeout(() => abrirWhatsApp(r.texto, tel), 700);
+    } catch(e){ toast('No pude armar la proforma: ' + e.message, 'error'); }
   };
   $('#ec-guardar').onclick = async () => {
     const t = token();
