@@ -303,7 +303,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.31.0';
+const VERSION = '1.32.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1', promo:'kq_promo_v1' };
@@ -857,7 +857,7 @@ function planLocal(v){
     const nuevoModelo = v.abono_pagado !== undefined && v.abono_pagado !== null;
     if(nuevoModelo){
       const abonoPagado = !!v.abono_pagado;
-      const primeraPago = abonoPagado ? fecha : (cuotasProg(fecha, 2)[1] || fecha);
+      const primeraPago = (abono > 0 && !abonoPagado) ? (cuotasProg(fecha, 2)[1] || fecha) : fecha;
       const fechas = cuotasProg(primeraPago, planN);
       const partes = repartirMonto(Math.max(0, total - abono), planN);
       const pagos = fechas.map((f, i) => ({ numero: i + 1, monto: partes[i], vencimiento: f, pagada: false, tipo: 'abono' }));
@@ -1526,12 +1526,23 @@ function pintarVender(app){
   let vPlanFilas = [];
   let vPlanTipo = '';
   let vPlanEditado = false;
+  let vPlanFechasManual = false;   // el usuario movió una fecha a mano: no se pisa
+
+  // Primera cuota: sin abono ocupa la próxima quincena; con abono pendiente,
+  // el abono ocupa esa fecha y la primera cuota pasa a la quincena siguiente.
+  const primeraPagoCel = (abonoMonto) => {
+    const fv = $('#v-fecha').value || hoyISO();
+    const prox = cuotasProg(fv, 1)[0] || fv;
+    const hayAbono = Math.max(0, num(abonoMonto)) > 0;
+    const abonoPagado = !!($('#v-abono-pagado') && $('#v-abono-pagado').checked);
+    return (hayAbono && !abonoPagado) ? (cuotasProg(prox, 2)[1] || prox) : prox;
+  };
 
   const armarPlanCel = (planN, total, fechaVenta) => {
     const prox = cuotasProg(fechaVenta, 1)[0] || fechaVenta;
     const abonoPagado = !!($('#v-abono-pagado') && $('#v-abono-pagado').checked);
     const abonoFecha = abonoPagado ? fechaVenta : prox;
-    const primeraPago = abonoPagado ? prox : (cuotasProg(prox, 2)[1] || prox);
+    const primeraPago = prox;   // sin abono, la primera cuota toma la fecha del abono
     const filas = [{ concepto:'abono', fecha: abonoFecha, monto: 0 }];
     if(planN > 0){
       const fechas = cuotasProg(primeraPago, planN);
@@ -1551,6 +1562,17 @@ function pintarVender(app){
     const resto = Math.max(0, total - abono);
     const base = Math.floor(resto / pagos.length);
     pagos.forEach((f,k)=>{ f.monto = k === pagos.length-1 ? resto - base*(pagos.length-1) : base; });
+    // Las fechas se acomodan solas al escribir el abono (1 y 16).
+    if(!vPlanFechasManual){
+      const fv = $('#v-fecha').value || hoyISO();
+      const prox = cuotasProg(fv, 1)[0] || fv;
+      const abonoPagado = !!($('#v-abono-pagado') && $('#v-abono-pagado').checked);
+      if(vPlanFilas[0] && vPlanFilas[0].concepto === 'abono'){
+        vPlanFilas[0].fecha = abonoPagado ? fv : prox;
+      }
+      const fechas = cuotasProg(primeraPagoCel(abono), pagos.length);
+      pagos.forEach((f,k)=>{ f.fecha = fechas[k]; });
+    }
   };
 
   const actualizarSumaPlanCel = () => {
@@ -1585,6 +1607,7 @@ function pintarVender(app){
       inp.onchange = () => {
         const i = +inp.dataset.planFecha;
         if(vPlanFilas[i]) vPlanFilas[i].fecha = inp.value;
+        vPlanFechasManual = true;   // la movió a mano: no se vuelve a acomodar sola
         vPlanEditado = true;
         actualizarSumaPlanCel();
       };
@@ -1592,8 +1615,22 @@ function pintarVender(app){
     cont.querySelectorAll('[data-plan-monto]').forEach(inp => {
       inp.oninput = () => {
         const i = +inp.dataset.planMonto;
-        if(vPlanFilas[i]) vPlanFilas[i].monto = Math.max(0, Math.round(num(inp.value)));
-        vPlanEditado = true;
+        if(!vPlanFilas[i]) return;
+        vPlanFilas[i].monto = Math.max(0, Math.round(num(inp.value)));
+        if(vPlanFilas[i].concepto === 'abono'){
+          // Al escribir el abono, los pagos y las fechas se acomodan solos.
+          vPlanFechasManual = false;
+          vPlanEditado = false;
+          recalcularPlanCel(totalVentaItems($tipo()));
+          cont.querySelectorAll('[data-plan-monto]').forEach((x, k) => {
+            if(k !== i && vPlanFilas[k]) x.value = Math.round(vPlanFilas[k].monto);
+          });
+          cont.querySelectorAll('[data-plan-fecha]').forEach((x, k) => {
+            if(vPlanFilas[k]) x.value = vPlanFilas[k].fecha;
+          });
+        } else {
+          vPlanEditado = true;
+        }
         actualizarSumaPlanCel();
       };
     });
@@ -1601,7 +1638,9 @@ function pintarVender(app){
       b.onclick = () => {
         const i = +b.dataset.planCero;
         if(vPlanFilas[i]) vPlanFilas[i].monto = 0;
-        vPlanEditado = true;
+        vPlanFechasManual = false;
+        vPlanEditado = false;
+        recalcularPlanCel(totalVentaItems($tipo()));
         renderPlanCel();
       };
     });
@@ -1609,12 +1648,8 @@ function pintarVender(app){
 
   const repartirPlanCel = () => {
     const total = totalVentaItems($tipo());
-    const abono = Math.max(0, Math.min(num(vPlanFilas[0] && vPlanFilas[0].monto), total));
-    const pagos = vPlanFilas.filter(f => f.concepto === 'pago');
-    if(!pagos.length) return;
-    const resto = Math.max(0, total - abono);
-    const base = Math.floor(resto / pagos.length);
-    pagos.forEach((f,k)=>{ f.monto = k === pagos.length-1 ? resto - base*(pagos.length-1) : base; });
+    vPlanFechasManual = false;
+    recalcularPlanCel(total);
     vPlanEditado = false;
     renderPlanCel();
   };
@@ -1644,6 +1679,7 @@ function pintarVender(app){
         }
         vPlanTipo = tipo;
         vPlanEditado = false;
+        vPlanFechasManual = false;
       } else if(!vPlanEditado){
         recalcularPlanCel(total);
       }
@@ -1711,11 +1747,13 @@ function pintarVender(app){
   $('#v-tipo').addEventListener('change', () => {
     vPlanTipo = '';
     vPlanEditado = false;
+    vPlanFechasManual = false;
     actualizar();
   });
   $('#v-abono-pagado').addEventListener('change', () => {
     vPlanTipo = '';
     vPlanEditado = false;
+    vPlanFechasManual = false;
     actualizar();
   });
   const llenarClientes = () => {
@@ -1740,6 +1778,7 @@ function pintarVender(app){
   $('#v-fecha').addEventListener('change', () => {
     vPlanTipo = '';
     vPlanEditado = false;
+    vPlanFechasManual = false;
     actualizar();
   });
   $('#v-plan-repartir').addEventListener('click', repartirPlanCel);
@@ -1834,7 +1873,7 @@ function pintarVender(app){
           action: 'movimiento', token: t, tipo: 'venta',
           perfume_id: v.perfume_id, perfume: v.perfume, cantidad: v.cantidad,
           cliente: v.cliente, telefono: v.telefono, monto: v.monto,
-          tipo_pago: v.tipo, abono: v.abono, primera_cuota: primera ? primera.vencimiento : v.fecha,
+          tipo_pago: v.tipo, abono: v.abono, primera_cuota: primera ? primera.fecha : v.fecha,
           abono_modo: 'inicial', abono_pagado: v.abono_pagado, abono_fecha: abonoFecha, referencia: v.referencia,
           items: v.items.map(i => ({ producto_id: i.producto_id, cantidad: i.cantidad })),
           nota: ((($('#v-nota').value.trim()) ? $('#v-nota').value.trim() + ' · ' : '') + 'Venta app · ' + etiquetaPago + ' ' + marca).trim(),
@@ -2801,10 +2840,7 @@ function abrirAbono(c){
       <label class="f"><span>Monto del abono ₡</span><input id="ab-monto" type="number" min="1" step="100" value="${sugerido}" inputmode="numeric"></label>
       <label class="f"><span>Fecha</span><input id="ab-fecha" type="date" value="${fechaHoy}"></label>
       <div id="ab-resumen" class="hint"></div>
-      <label class="f"><span>Cómo aplicarlo</span><select id="ab-modo">
-        <option value="cuota">A la próxima cuota</option>
-        <option value="repartir">Repartir entre los pagos que faltan</option>
-      </select></label>
+      <div class="hint" style="margin:4px 0">El abono se acomoda solo: la cuota que toca queda pagada (aunque sea parcial) y lo que falte se suma al último pago.</div>
       <div style="display:grid;gap:8px;margin-top:10px">
         <button class="btn" id="ab-guardar">Registrar abono</button>
         <button class="btn ghost" id="ab-cancelar">Cancelar</button>
@@ -2830,7 +2866,7 @@ function abrirAbono(c){
     const btn = $('#ab-guardar');
     btn.disabled = true; btn.textContent = 'Registrando…';
     try {
-      const marca = '[[KQV:' + JSON.stringify({ venta_id: Number(c.venta_id), repartir: $('#ab-modo').value === 'repartir' || undefined }) + ']]';
+      const marca = '[[KQV:' + JSON.stringify({ venta_id: Number(c.venta_id), repartir: true }) + ']]';
       const r = await fetch(API, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
