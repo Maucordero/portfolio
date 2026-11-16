@@ -2518,13 +2518,12 @@ function aplicarAbonosPendientes(lista){
     const total = noAplicados.reduce((s,a) => s + num(a.monto), 0);
     const saldo = Math.max(0, num(c.saldo) - total);
     if(saldo > 0.5){
-      const ult = noAplicados.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0)).pop();
-      out.push(Object.assign({}, c, {
-        saldo,
-        abonado: num(c.abonado) + total,
-        ultimo_pago: ult ? num(ult.monto) : num(c.ultimo_pago),
-        ultimo_pago_fecha: (ult && ult.fecha) ? String(ult.fecha).slice(0, 10) : (c.ultimo_pago_fecha || ''),
-      }));
+      // Aplica los abonos pendientes en orden y rehace el plan igual que la PC.
+      let fila = c;
+      for(const a of noAplicados.slice().sort((x, y) => (x.ts || 0) - (y.ts || 0))){
+        fila = reflowCobroCel(fila, a.monto, a.fecha);
+      }
+      out.push(fila);
       quedan.push(...noAplicados);
     }
   }
@@ -2849,6 +2848,16 @@ function reflowCobroCel(c, monto, fecha){
     parcial: !!(x && (x.parcial != null ? x.parcial : x.pa)),
     t: String((x && (x.t || x.tipo)) || 'abono'),
   })).filter(x => x.m > 0.5 && x.f);
+
+  // Sin plan (caché viejo) no se toca nada raro: solo se descuenta el saldo.
+  if(!filas.length || !(total > 0)){
+    return Object.assign({}, c, {
+      abonado: num(c && c.abonado) + num(monto),
+      saldo: Math.max(0, num(c && c.saldo) - num(monto)),
+      ultimo_pago: num(monto),
+      ultimo_pago_fecha: fechaPago,
+    });
+  }
 
   // Estado del plan ANTES del abono nuevo: se marcan las cuotas ya cubiertas.
   let acum = 0;
