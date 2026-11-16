@@ -303,7 +303,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.32.0';
+const VERSION = '1.32.1';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', porComprar:'kq_por_comprar_v1', promo:'kq_promo_v1' };
@@ -930,6 +930,7 @@ function datosFacturaCel(v){
     monto_total: num(c.monto_total != null ? c.monto_total : (c.mt != null ? c.mt : (c.monto != null ? c.monto : c.m))),
     vencimiento: String(c.vencimiento || c.f || '').slice(0, 10),
     pagada: !!(c.pagada != null ? c.pagada : c.p),
+    parcial: !!(c.parcial != null ? c.parcial : c.pa),
     tipo: String(c.tipo || c.t || 'abono'),
   })).filter(c => c.monto > 0.5);
   const extra = planN > 0 && normal.length > planN;
@@ -939,15 +940,17 @@ function datosFacturaCel(v){
   if(v.saldo == null && planN > 0) saldo = planLocal(v).saldo;
   const pagada = saldo <= 0.5;
   const filas = normal.map((c, i) => {
-    const esAbono = abonoComoCuota && i === 0;
-    const etiqueta = esAbono ? (c.tipo === 'prima' ? 'Prima' : 'Abono') : (c.tipo === 'prima' ? 'Prima' : etiquetaPagoCel(i + (abonoComoCuota ? 0 : 1)));
+    const esAbono = (abonoComoCuota && i === 0) || c.parcial;
+    const esPrima = c.tipo === 'prima';
+    const etiqueta = (esAbono || c.parcial) ? (esPrima ? 'Prima' : 'Abono') : (esPrima ? 'Prima' : etiquetaPagoCel(i + (abonoComoCuota ? 0 : 1)));
     const p = c.pagada || pagada;
     return {
       etiqueta,
       vencimiento: c.vencimiento,
       monto: Math.round(p ? (c.monto_total || c.monto) : c.monto),
       pagada: p,
-      tipo: esAbono ? 'abono' : (c.tipo === 'prima' ? 'prima' : 'pago'),
+      parcial: c.parcial,
+      tipo: (esAbono || c.parcial) ? 'abono' : (esPrima ? 'prima' : 'pago'),
     };
   });
   // Abonos REALES recibidos (la PC los manda en COBROS.pagos): que se vean como filas pagadas.
@@ -2823,6 +2826,124 @@ function programarRefrescoCobros(intentos = 0){
   }, 25000);
 }
 
+// Rehace el plan de un cobro después de un abono con la MISMA regla que la PC:
+// la cuota que toca queda pagada (aunque sea parcial), el faltante se suma al
+// último pago y, si el pago parcial era el último, se abre una cuota nueva en
+// la próxima quincena (sin recargo). Sirve para que la factura que se manda por
+// WhatsApp salga bien al instante, sin esperar a que la PC publique COBROS.
+function reflowCobroCel(c, monto, fecha){
+  const total = num(c && c.total);
+  const abonadoPrevio = num(c && c.abonado);
+  const abonado = Math.min(total, abonadoPrevio + num(monto));
+  const fechaPago = String(fecha || hoyISO()).slice(0, 10);
+
+  const crudas = (() => {
+    let x = c && c.cuotas;
+    if(typeof x === 'string'){ try { x = JSON.parse(x); } catch(e){ x = []; } }
+    return Array.isArray(x) ? x : [];
+  })();
+  let filas = crudas.map(x => ({
+    f: String((x && (x.f || x.fecha)) || '').slice(0, 10),
+    m: num(x && (x.m != null ? x.m : x.monto)),
+    p: !!(x && (x.p != null ? x.p : x.pagada)),
+    parcial: !!(x && (x.parcial != null ? x.parcial : x.pa)),
+    t: String((x && (x.t || x.tipo)) || 'abono'),
+  })).filter(x => x.m > 0.5 && x.f);
+
+  // Estado del plan ANTES del abono nuevo: se marcan las cuotas ya cubiertas.
+  let acum = 0;
+  for(const r of filas){ acum += r.m; r.p = abonadoPrevio >= acum - 0.5; }
+
+  const sumaPagadas = filas.filter(r => r.p).reduce((s, r) => s + r.m, 0);
+  const dif = Math.max(0, abonado - sumaPagadas);
+  if(dif > 0.5 && filas.length){
+    const pend = filas.filter(r => !r.p);
+    const f0 = pend[0];
+    if(f0 && dif <= f0.m + 0.5){
+      if(Math.abs(dif - f0.m) < 0.5){ f0.p = true; f0.parcial = false; }
+      else { f0.m = dif; f0.p = true; f0.parcial = true; }
+    } else {
+      filas.push({ f: fechaPago, m: dif, p: true, parcial: true, t: 'abono' });
+    }
+    filas.sort((a, b) => String(a.f).localeCompare(String(b.f)));
+  }
+
+  const pagado = filas.filter(r => r.p).reduce((s, r) => s + r.m, 0);
+  let pend = filas.filter(r => !r.p);
+  const resto = Math.max(0, total - pagado);
+  if(resto <= 0.5){
+    if(pend.length) filas = filas.filter(r => r.p);
+  } else if(pend.length){
+    const otras = pend.slice(0, -1).reduce((s, r) => s + r.m, 0);
+    const ultima = resto - otras;
+    if(ultima > 0.5){
+      pend[pend.length - 1].m = ultima;
+    } else {
+      const base = Math.floor(resto / pend.length);
+      pend.forEach((r, k) => { r.m = k === pend.length - 1 ? resto - base * (pend.length - 1) : base; });
+    }
+  } else if(filas.length){
+    const fechas = filas.map(r => r.f).filter(Boolean).sort();
+    const ultimaFecha = fechas[fechas.length - 1] || fechaPago;
+    const baseFecha = fechaPago > ultimaFecha ? fechaPago : ultimaFecha;
+    const nueva = cuotasProg(baseFecha, 2)[1] || baseFecha;
+    filas.push({ f: nueva, m: resto, p: false, parcial: false, t: 'abono' });
+    filas.sort((a, b) => String(a.f).localeCompare(String(b.f)));
+  }
+
+  // Pagos reales recibidos (la factura los usa para poner la fecha real)
+  const pagosPrevios = (() => {
+    let x = c && c.pagos;
+    if(typeof x === 'string'){ try { x = JSON.parse(x); } catch(e){ x = []; } }
+    return Array.isArray(x) ? x : [];
+  })();
+  const pagos = pagosPrevios.map(x => ({
+    m: num(x && (x.m != null ? x.m : x.monto)),
+    f: String((x && (x.f || x.fecha)) || '').slice(0, 10),
+  })).filter(x => x.m > 0.5 && x.f)
+    .concat([{ m: num(monto), f: fechaPago }])
+    .sort((a, b) => String(a.f).localeCompare(String(b.f)));
+
+  const pendFinal = filas.filter(r => !r.p && r.m > 0.5)
+    .sort((a, b) => String(a.f).localeCompare(String(b.f)));
+  const prox = pendFinal[0] || null;
+
+  return Object.assign({}, c, {
+    cuotas: JSON.stringify(filas.map((r, i) => ({
+      n: i + 1, f: r.f, m: Math.round(r.m), p: r.p ? 1 : 0,
+      t: r.t || 'abono', parcial: r.parcial ? 1 : 0,
+    }))),
+    pagos: JSON.stringify(pagos),
+    abonado,
+    saldo: resto,
+    ultimo_pago: num(monto),
+    ultimo_pago_fecha: fechaPago,
+    proximo: prox ? prox.f : '',
+    proximo_monto: prox ? Math.round(prox.m) : 0,
+    pendientes: pendFinal.length,
+    atrasado: pendFinal.some(r => r.f <= hoyISO()) ? 1 : 0,
+  });
+}
+
+// Al registrar un abono que deja saldo: abre el WhatsApp del cliente con la
+// factura (imagen) y el texto del remanente, igual que la PC.
+async function enviarFacturaAbonoCel(cobro){
+  if(!cobro) return;
+  const tel = String(cobro.telefono || '').replace(/\D/g, '');
+  try {
+    const r = await facturaCelDocumento(cobro, 'factura');
+    await entregarImagen(r.png, '🧾 Factura copiada — pegala en el chat', r.texto);
+    if(tel) setTimeout(() => abrirWhatsApp(r.texto, tel), 700);
+  } catch(e){
+    // Si el teléfono no pudo armar la imagen, al menos manda el texto.
+    try {
+      const txt = textoDocumentoCel(cobro, 'factura');
+      await copiar(txt, '📋 Copié el mensaje del abono');
+      if(tel) setTimeout(() => abrirWhatsApp(txt, tel), 400);
+    } catch(e2){ toast('No pude mandar el WhatsApp: ' + (e2.message || e.message), 'error'); }
+  }
+}
+
 function abrirAbono(c){
   if(!c) return;
   const saldo = num(c.saldo);
@@ -2881,6 +3002,9 @@ function abrirAbono(c){
       if(!j || !j.ok) throw new Error((j && j.error) || 'Google rechazó el abono');
       cerrar();
       const restante = Math.max(0, saldo - monto);
+      // Plan nuevo con la regla de la PC (cuota pagada aunque sea parcial,
+      // faltante al último pago y cuota nueva si era el último).
+      const cobroNuevo = reflowCobroCel(c, monto, fecha);
       // Guarda el abono como pendiente hasta que la PC lo refleje en COBROS,
       // así la venta no reaparece con el saldo viejo al refrescar.
       abonosPendientes.push({ venta_id: Number(c.venta_id), monto, saldoAntes: saldo, fecha, ts: Date.now() });
@@ -2890,12 +3014,7 @@ function abrirAbono(c){
       const idx = cobros.findIndex(x => String(x.venta_id) === String(c.venta_id));
       if(idx >= 0){
         if(restante <= 0.5) cobros.splice(idx, 1);
-        else cobros[idx] = Object.assign({}, cobros[idx], {
-          saldo: restante,
-          abonado: num(cobros[idx].abonado) + monto,
-          ultimo_pago: monto,
-          ultimo_pago_fecha: String(fecha).slice(0, 10),
-        });
+        else cobros[idx] = cobroNuevo;
         guardarLS(LS.cobros, { cobros, guardado: Date.now() });
       }
       if(vista === 'cobros') render();
@@ -2905,6 +3024,8 @@ function abrirAbono(c){
         setTimeout(() => enviarGraciasAutomatica(c), 500);
       } else {
         mostrarConfirmacionCobro(`✅ Abono de ${money(monto)} anotado · ${c.cliente} · Saldo ${money(restante)}`);
+        // Igual que la PC: factura con el remanente al WhatsApp del cliente.
+        setTimeout(() => enviarFacturaAbonoCel(cobroNuevo), 600);
       }
       // La PC aplica el abono en segundos; refrescamos para que pase a Cobrados.
       programarRefrescoCobros();
