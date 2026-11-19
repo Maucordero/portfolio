@@ -1,8 +1,8 @@
-/* King Quepoa · app del celular
+/* King Quepoa Â· app del celular
    Guarda la app para que abra sin internet.
    Los datos del inventario los maneja la propia app (localStorage). */
 
-const CACHE = 'kq-app-v63';
+const CACHE = 'kq-app-v64';
 const ARCHIVOS = [
   './',
   './index.html',
@@ -33,7 +33,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
 
-  // Google (catálogo y movimientos) siempre va a la red.
+  // Google (catÃ¡logo y movimientos) siempre va a la red.
   if (url.hostname.includes('script.google.com') || url.hostname.includes('googleusercontent.com')) return;
   if (e.request.method !== 'GET') return;
 
