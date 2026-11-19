@@ -141,6 +141,23 @@ async function facturaPagoUnicoCel(datos, opts = {}){
   }
   y = Math.max(yc, yf) + 22;
 
+  // --- Foto del perfume (opcional: la de la cotización) ---
+  if (opts.foto){
+    try {
+      const foto = await cargarImagenURL(opts.foto);
+      const lado = 250;
+      const escF = Math.min(lado / foto.width, lado / foto.height);
+      const fw = Math.round(foto.width * escF), fh = Math.round(foto.height * escF);
+      const fx = Math.round((W - fw) / 2);
+      ctx.fillStyle = "#fbf4df";
+      ctx.fillRect(fx - 14, y - 14, fw + 28, fh + 28);
+      ctx.strokeStyle = "#ecd9a8"; ctx.lineWidth = 3;
+      ctx.strokeRect(fx - 14, y - 14, fw + 28, fh + 28);
+      ctx.drawImage(foto, fx, y, fw, fh);
+      y += fh + 46;
+    } catch(e){ /* si la foto no carga, la proforma sale igual */ }
+  }
+
   // --- Tabla de perfumes: precio al contado, precio a pagos y Total ---
   const esPlan = !!(cuotas && cuotas.length);
   const factorPagos = esPlan && subtotal > 0 ? totalFinal / subtotal : 1;
