@@ -133,6 +133,10 @@
   .cot-cuota span:first-child{flex:1}
   .cot-cuota span:nth-child(2){color:var(--muted);font-size:12px}
   .cot-cuota b{color:var(--gold2);font-variant-numeric:tabular-nums}
+  .cot-foto-app{display:flex;gap:10px;align-items:center;background:var(--panel2);border:1px dashed var(--line2);border-radius:var(--r-sm);padding:10px;margin-bottom:12px}
+  .cot-foto-app .prev{width:76px;height:76px;flex:none;display:flex;align-items:center;justify-content:center;background:#fff;border-radius:var(--r-xs);border:1px solid var(--line);overflow:hidden;color:var(--muted);font-size:26px}
+  .cot-foto-app .prev img{width:100%;height:100%;object-fit:contain}
+  .cot-foto-app .cuerpo{flex:1;min-width:0}
 
   .vacio{text-align:center;color:var(--muted);padding:40px 10px;font-size:14px}
   .vacio .em{font-size:34px;display:block;margin-bottom:8px}
@@ -4101,6 +4105,19 @@ function pintarResultadoCotizacion(){
     </div>
     <div id="ct-plan-detalle"></div>
     <div style="border-top:1px solid var(--line);margin:14px 0 12px"></div>
+    <div class="titulo" style="margin:0 0 6px">Foto para la cotización</div>
+    <div class="cot-foto-app">
+      <div class="prev">${cotEstado.foto ? `<img src="${esc(cotEstado.foto)}" alt="">` : '🖼'}</div>
+      <div class="cuerpo">
+        <div class="hint" style="margin-bottom:6px">Subila de la galería o abrí Pinterest y guardá la que te guste.</div>
+        <div class="fila" style="gap:6px;flex-wrap:wrap">
+          <button class="btn ghost sm" type="button" id="ct-subir">📷 Subir foto</button>
+          <button class="btn ghost sm" type="button" id="ct-pinterest">🖼 Abrir Pinterest</button>
+          ${cotEstado.foto ? `<button class="btn ghost sm" type="button" id="ct-quitar-foto">✕</button>` : ''}
+        </div>
+        <input type="file" id="ct-foto-file" accept="image/*" class="oculto">
+      </div>
+    </div>
     <div class="titulo" style="margin:0 0 6px">Mandar al cliente</div>
     <label class="f"><span>Cliente (opcional)</span>
       <input id="ct-cliente" list="ct-cli-list" placeholder="Nombre del cliente" autocomplete="off">
@@ -4133,7 +4150,55 @@ function pintarResultadoCotizacion(){
   });
   $('#ct-wa').onclick = enviarCotizacionWhatsApp;
   $('#ct-copiar').onclick = () => copiar(textoCotizacionCel(), '📋 Cotización copiada');
+  $('#ct-subir').onclick = () => $('#ct-foto-file').click();
+  $('#ct-foto-file').onchange = async ev => {
+    const f = ev.target.files && ev.target.files[0];
+    ev.target.value = '';
+    if(f) await cotPonerFoto(f);
+  };
+  const qf = $('#ct-quitar-foto');
+  if(qf) qf.onclick = () => {
+    cotEstado.foto = '';
+    $('#ct-resultado .cot-foto-app .prev').innerHTML = '🖼';
+    qf.remove();
+    toast('Foto quitada');
+  };
+  $('#ct-pinterest').onclick = () => {
+    const w = window.open('https://www.pinterest.com/', '_blank');
+    if(!w) location.href = 'https://www.pinterest.com/';
+  };
   cotRefresh();
+}
+
+// Sube/achica la foto de la cotización (queda solo en memoria).
+async function cotPonerFoto(file){
+  if(!file || !/^image\//i.test(file.type || '')) return toast('Elegí una imagen', 'error');
+  toast('🖼 Preparando la foto…');
+  try {
+    const dataUrl = await new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => res(String(fr.result || ''));
+      fr.onerror = () => rej(new Error('No se pudo leer la imagen'));
+      fr.readAsDataURL(file);
+    });
+    const img = await new Promise((res, rej) => {
+      const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = dataUrl;
+    });
+    const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+    const escala = Math.min(1, 900 / Math.max(w0, h0));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w0 * escala));
+    c.height = Math.max(1, Math.round(h0 * escala));
+    const x = c.getContext('2d');
+    x.fillStyle = '#ffffff'; x.fillRect(0, 0, c.width, c.height);
+    x.drawImage(img, 0, 0, c.width, c.height);
+    cotEstado.foto = c.toDataURL('image/jpeg', 0.85);
+    const prev = $('#ct-resultado .cot-foto-app .prev');
+    if(prev) prev.innerHTML = `<img src="${esc(cotEstado.foto)}" alt="">`;
+    toast('🖼 Foto lista para la cotización');
+  } catch(e){
+    toast('No pude leer la imagen: ' + e.message, 'error');
+  }
 }
 
 function textoCotizacionCel(){
@@ -4183,6 +4248,7 @@ async function imagenCotizacionCel(){
     etiquetaCliente: 'Cotización para',
     config: datos.config || {},
     logo: './logo.png',
+    foto: cotEstado.foto || '',
   };
   return facturaPagoUnicoCel({
     cliente,
@@ -4252,6 +4318,8 @@ function calcularCotizacion(){
     margenTabla: sug ? sug.pct : null,
     tipo: 'contado',
     fecha: hoyISO(),
+    // La foto se mantiene si es el mismo perfume; si cambia, se limpia.
+    foto: (cotEstado && cotEstado.producto === nombre) ? (cotEstado.foto || '') : '',
   };
   pintarResultadoCotizacion();
 }
