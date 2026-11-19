@@ -4115,6 +4115,10 @@ function pintarResultadoCotizacion(){
           <button class="btn ghost sm" type="button" id="ct-pinterest">🖼 Buscar en Pinterest</button>
           ${cotEstado.foto ? `<button class="btn ghost sm" type="button" id="ct-quitar-foto">✕</button>` : ''}
         </div>
+        <div class="fila" style="gap:6px;margin-top:6px">
+          <input id="ct-link" placeholder="…o pegá el link de la imagen" style="flex:1;min-width:0">
+          <button class="btn ghost sm" type="button" id="ct-link-btn">Usar</button>
+        </div>
         <div class="hint" id="ct-busqueda" style="margin-top:6px">${cotTextoBusquedaHtml()}</div>
         <input type="file" id="ct-foto-file" accept="image/*" class="oculto">
       </div>
@@ -4164,6 +4168,8 @@ function pintarResultadoCotizacion(){
     qf.remove();
     toast('Foto quitada');
   };
+  $('#ct-link-btn').onclick = cotFotoDeLink;
+  $('#ct-link').addEventListener('keydown', ev => { if(ev.key === 'Enter'){ ev.preventDefault(); cotFotoDeLink(); } });
   $('#ct-pinterest').onclick = abrirPinterestCot;
   const prevCot = $('#ct-foto-prev');
   if(prevCot) prevCot.onclick = abrirPinterestCot;
@@ -4198,7 +4204,21 @@ function abrirPinterestCot(){
   if(!w) location.href = url;
 }
 
-// Sube/achica la foto de la cotización (queda solo en memoria).
+// Achica la imagen y la guarda SOLO en memoria (nunca en el teléfono ni en Google).
+function cotGuardarFotoImg(img){
+  const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+  const escala = Math.min(1, 900 / Math.max(w0, h0));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w0 * escala));
+  c.height = Math.max(1, Math.round(h0 * escala));
+  const x = c.getContext('2d');
+  x.fillStyle = '#ffffff'; x.fillRect(0, 0, c.width, c.height);
+  x.drawImage(img, 0, 0, c.width, c.height);
+  cotEstado.foto = c.toDataURL('image/jpeg', 0.85);
+  const prev = $('#ct-resultado .cot-foto-app .prev');
+  if(prev) prev.innerHTML = `<img src="${esc(cotEstado.foto)}" alt="">`;
+}
+
 async function cotPonerFoto(file){
   if(!file || !/^image\//i.test(file.type || '')) return toast('Elegí una imagen', 'error');
   toast('🖼 Preparando la foto…');
@@ -4212,21 +4232,55 @@ async function cotPonerFoto(file){
     const img = await new Promise((res, rej) => {
       const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = dataUrl;
     });
-    const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
-    const escala = Math.min(1, 900 / Math.max(w0, h0));
-    const c = document.createElement('canvas');
-    c.width = Math.max(1, Math.round(w0 * escala));
-    c.height = Math.max(1, Math.round(h0 * escala));
-    const x = c.getContext('2d');
-    x.fillStyle = '#ffffff'; x.fillRect(0, 0, c.width, c.height);
-    x.drawImage(img, 0, 0, c.width, c.height);
-    cotEstado.foto = c.toDataURL('image/jpeg', 0.85);
-    const prev = $('#ct-resultado .cot-foto-app .prev');
-    if(prev) prev.innerHTML = `<img src="${esc(cotEstado.foto)}" alt="">`;
+    cotGuardarFotoImg(img);
     toast('🖼 Foto lista para la cotización');
   } catch(e){
     toast('No pude leer la imagen: ' + e.message, 'error');
   }
+}
+
+// Pega el link de la imagen de Pinterest (i.pinimg.com); se carga sin guardarla.
+async function cotFotoDeLink(){
+  const inp = $('#ct-link');
+  const url = String((inp && inp.value) || '').trim();
+  if(!url) return toast('Pegá el link de la imagen', 'error');
+  const esPinimg = /^https:\/\/([a-z0-9-]+\.)?pinimg\.com\//i.test(url);
+  const pareceImagen = esPinimg || /\.(jpe?g|png|webp)(\?|$)/i.test(url);
+  toast('🖼 Buscando la imagen…');
+  let img = null;
+  // 1) Si es una dirección de imagen, se carga directo (rápido, sin depender de Google).
+  if(pareceImagen){
+    try {
+      img = await new Promise((res, rej) => {
+        const i = new Image();
+        i.crossOrigin = 'anonymous';
+        i.onload = () => res(i);
+        i.onerror = () => rej(new Error('no'));
+        i.src = url;
+      });
+    } catch(e){ img = null; }
+  }
+  // 2) Si no, la trae Google (pin, o una imagen que el teléfono no deja leer).
+  if(!img){
+    try {
+      const t = token();
+      if(!t) throw new Error('Falta la clave');
+      const r = await fetch(API + '?action=imagen&token=' + encodeURIComponent(t) + '&url=' + encodeURIComponent(url) + '&t=' + Date.now());
+      const j = await r.json();
+      if(!j || !j.ok) throw new Error((j && j.error) || 'No pude traer la imagen');
+      img = await new Promise((res, rej) => {
+        const i = new Image();
+        i.onload = () => res(i);
+        i.onerror = () => rej(new Error('La imagen no se pudo abrir'));
+        i.src = j.dataUrl;
+      });
+    } catch(e){
+      return toast('No pude usar ese link. En el celular: abrí el pin, dejá presionada la foto → Guardar imagen, y usá 📷 Subir foto');
+    }
+  }
+  cotGuardarFotoImg(img);
+  if(inp) inp.value = '';
+  toast('🖼 Foto lista para la cotización');
 }
 
 function textoCotizacionCel(){
