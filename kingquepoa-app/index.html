@@ -123,7 +123,7 @@
     background:var(--panel2);border:1px solid var(--line);color:var(--muted)
   }
   /* Cotizar: números grandes y detalle del plan (no guarda nada) */
-  .cot-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+  .cot-kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}
   .cot-kpis>div{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 9px;min-width:0}
   .cot-kpis small{display:block;font-size:10.5px;color:var(--muted);margin-bottom:2px}
   .cot-kpis b{display:block;font-size:14px;color:var(--gold2);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -4024,14 +4024,24 @@ function cotPrecioContado(){ return Math.max(0, Math.round(num(cotEstado && cotE
 function cotGanancia(total){ return Math.round(num(total) - cotCostoCrc()); }
 
 function cotKpisHtml(){
+  const cot = cotEstado;
   const precio = cotPrecioContado();
   const costo = cotCostoCrc();
-  const gan = precio - costo;
-  const pct = precio > 0 ? (gan / precio) * 100 : 0;
+  const ganC = precio - costo;
+  const pctC = precio > 0 ? (ganC / precio) * 100 : 0;
+  // "Precio a pagos": el plan elegido; si está en Contado, el de 2 pagos (el normal).
+  const plan = planCotizacion({ tipo: planDe(cot.tipo) > 0 ? cot.tipo : 'pagos', precioContado: precio });
+  const gan = Math.round(plan.total) - costo;
+  const pct = plan.total > 0 ? (gan / plan.total) * 100 : 0;
+  const iguales = plan.cuotas.every(c => Math.round(c.monto) === Math.round(plan.cuotas[0].monto));
+  const detallePago = plan.n
+    ? `${plan.n} pago${plan.n === 1 ? '' : 's'} ${iguales ? 'de ' + money(plan.cuotas[0].monto) : 'desiguales'}${plan.rec > 0 ? ' · +' + plan.rec + '%' : ' · sin recargo'}`
+    : '';
   return `<div class="cot-kpis">
-    <div><small>Te costó</small><b>${money(costo)}</b><span>${usd(cotEstado.costoUsd)}</span></div>
-    <div><small>Venta contado</small><b>${money(precio)}</b><span>un solo pago</span></div>
-    <div><small>Ganancia</small><b style="color:${gan >= 0 ? 'var(--green)' : 'var(--red)'}">${money(gan)}</b><span>${pct.toFixed(1)}%</span></div>
+    <div><small>Te costó</small><b>${money(costo)}</b><span>${usd(cot.costoUsd)}</span></div>
+    <div><small>Venta contado</small><b>${money(precio)}</b><span>Ganancia ${money(ganC)} · ${pctC.toFixed(1)}%</span></div>
+    <div><small>Precio a pagos</small><b>${money(plan.total)}</b><span>${detallePago}</span></div>
+    <div><small>Ganancia</small><b style="color:${gan >= 0 ? 'var(--green)' : 'var(--red)'}">${money(gan)}</b><span>${pct.toFixed(1)}% · a ${plan.n} pago${plan.n === 1 ? '' : 's'}</span></div>
   </div>`;
 }
 
