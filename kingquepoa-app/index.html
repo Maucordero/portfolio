@@ -313,6 +313,8 @@ const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', promo:'kq_promo_v1' };
 // Clave vieja de la lista "Para comprar" de Cotizar (se borra sola al abrir).
 const LS_POR_COMPRAR_VIEJO = 'kq_por_comprar_v1';
+// Borrador de la cotización en curso (solo el texto; la foto NUNCA se guarda).
+const SS_COT_BORRADOR = 'kq_cot_borrador_v1';
 
 let datos = { inventario:[], config:{}, guardado:null };
 let cobros = [];
@@ -4082,6 +4084,32 @@ function cotRefresh(){
   document.querySelectorAll('#ct-planes [data-plan]').forEach(b => {
     b.classList.toggle('on', b.dataset.plan === cotEstado.tipo);
   });
+  guardarBorradorCot();
+}
+
+// Borrador: guarda el texto de la cotización para que no se pierda al ir a
+// Pinterest y volver. La foto NO se guarda (solo vive en memoria).
+function guardarBorradorCot(){
+  try {
+    const v = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+    sessionStorage.setItem(SS_COT_BORRADOR, JSON.stringify({
+      estado: cotEstado ? Object.assign({}, cotEstado, { foto: '' }) : null,
+      cliente: v('ct-cliente'),
+      tel: v('ct-tel'),
+      link: v('ct-link'),
+      busqueda: v('ct-buscar'),
+      monto: v('ct-monto'),
+      moneda: v('ct-moneda'),
+    }));
+  } catch(e){}
+}
+
+function leerBorradorCot(){
+  try {
+    const j = sessionStorage.getItem(SS_COT_BORRADOR);
+    const b = j ? JSON.parse(j) : null;
+    return (b && typeof b === 'object') ? b : null;
+  } catch(e){ return null; }
 }
 
 function pintarResultadoCotizacion(){
@@ -4112,7 +4140,8 @@ function pintarResultadoCotizacion(){
         <div class="hint" style="margin-bottom:6px">Subila de la galería o abrila en Pinterest. La foto <b>no se guarda</b>: solo se usa en esta cotización.</div>
         <div class="fila" style="gap:6px;flex-wrap:wrap">
           <button class="btn ghost sm" type="button" id="ct-subir">📷 Subir foto</button>
-          <button class="btn ghost sm" type="button" id="ct-pinterest">🖼 Buscar en Pinterest</button>
+          <button class="btn ghost sm" type="button" id="ct-pegar">📋 Pegar imagen</button>
+          <button class="btn ghost sm" type="button" id="ct-pinterest">🖼 Pinterest</button>
           ${cotEstado.foto ? `<button class="btn ghost sm" type="button" id="ct-quitar-foto">✕</button>` : ''}
         </div>
         <div class="fila" style="gap:6px;margin-top:6px">
@@ -4170,6 +4199,9 @@ function pintarResultadoCotizacion(){
   };
   $('#ct-link-btn').onclick = cotFotoDeLink;
   $('#ct-link').addEventListener('keydown', ev => { if(ev.key === 'Enter'){ ev.preventDefault(); cotFotoDeLink(); } });
+  $('#ct-pegar').onclick = cotPegarImagen;
+  $('#ct-cliente').addEventListener('input', guardarBorradorCot);
+  $('#ct-tel').addEventListener('input', guardarBorradorCot);
   $('#ct-pinterest').onclick = abrirPinterestCot;
   const prevCot = $('#ct-foto-prev');
   if(prevCot) prevCot.onclick = abrirPinterestCot;
@@ -4217,6 +4249,28 @@ function cotGuardarFotoImg(img){
   cotEstado.foto = c.toDataURL('image/jpeg', 0.85);
   const prev = $('#ct-resultado .cot-foto-app .prev');
   if(prev) prev.innerHTML = `<img src="${esc(cotEstado.foto)}" alt="">`;
+}
+
+// Pega la imagen que tenés copiada (Pinterest, Google, cualquier página).
+async function cotPegarImagen(){
+  if(!navigator.clipboard || !navigator.clipboard.read){
+    return toast('Este navegador no deja pegar imágenes. Usá 📷 Subir foto', 'error');
+  }
+  try {
+    const items = await navigator.clipboard.read();
+    for(const it of items){
+      const tipo = (it.types || []).find(t => t.indexOf('image/') === 0);
+      if(tipo){
+        const blob = await it.getType(tipo);
+        const f = new File([blob], 'pegada.' + (tipo.split('/')[1] || 'png'), { type: tipo });
+        await cotPonerFoto(f);
+        return;
+      }
+    }
+    toast('El portapapeles no tiene una imagen copiada', 'error');
+  } catch(e){
+    toast('No pude leer el portapapeles. Copiá la imagen de nuevo o usá 📷 Subir foto', 'error');
+  }
 }
 
 async function cotPonerFoto(file){
@@ -4432,7 +4486,10 @@ function pintarCotizar(app){
   $('#ct-buscar').addEventListener('input', () => {
     $('#ct-prod').value = '';
     mostrarSugCot();
+    guardarBorradorCot();
   });
+  $('#ct-monto').addEventListener('input', guardarBorradorCot);
+  $('#ct-moneda').addEventListener('change', guardarBorradorCot);
   $('#ct-sug').addEventListener('click', ev => {
     const d = ev.target.closest('[data-ct]'); if(!d) return;
     const p = datos.inventario.find(x => String(x.id) === d.dataset.ct);
@@ -4448,6 +4505,22 @@ function pintarCotizar(app){
     $('#ct-sug').classList.add('oculto');
   });
   $('#ct-calcular').onclick = calcularCotizacion;
+
+  // Restaura la cotización en curso (si volviste de Pinterest, no se perdió nada).
+  const b = leerBorradorCot();
+  if(b){
+    if(b.busqueda) $('#ct-buscar').value = b.busqueda;
+    if(b.monto != null && b.monto !== '') $('#ct-monto').value = b.monto;
+    if(b.moneda) $('#ct-moneda').value = b.moneda;
+    if(b.estado && b.estado.producto){
+      cotEstado = Object.assign({}, b.estado, { foto: '' });
+      pintarResultadoCotizacion();
+      if(b.cliente) $('#ct-cliente').value = b.cliente;
+      if(b.tel) $('#ct-tel').value = b.tel;
+      if(b.link) $('#ct-link').value = b.link;
+      guardarBorradorCot();
+    }
+  }
 }
 
 /* ---------------- notas (avisos para la PC) ---------------- */
