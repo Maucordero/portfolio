@@ -44,6 +44,7 @@ async function facturaPagoUnicoCel(datos, opts = {}){
   const terminos = String(opts.terminos || "Contado");
   const cuotas = Array.isArray(opts.cuotas) ? opts.cuotas.filter(c => Math.round(Number(c && c.monto) || 0) > 0) : null;
   const titulo = String(opts.titulo || (proforma ? "PROFORMA" : "FACTURA"));
+  const etiquetaCliente = String(opts.etiquetaCliente || "Facturar a");
   const etiquetaCabecera = String(opts.etiquetaCabecera || (proforma ? "TOTAL A PAGAR" : (pagada ? "TOTAL PAGADO" : "SALDO ADEUDADO")));
   const a = opts.config || (window.datos && datos.config) || (window.D && D.ajustes) || {};
   const pago = String(a.datos_pago || "").trim();
@@ -112,7 +113,7 @@ async function facturaPagoUnicoCel(datos, opts = {}){
   // --- Cliente y fechas ---
   ctx.textAlign = "left";
   ctx.fillStyle = GRIS; ctx.font = "18px " + FUENTE;
-  ctx.fillText("Facturar a", M, y);
+  ctx.fillText(etiquetaCliente, M, y);
   ctx.fillStyle = TEXTO; ctx.font = "bold 28px " + FUENTE;
   const lineasCliente = envolverTexto(ctx, cliente || "Cliente", 500);
   let yc = y + 24;
