@@ -4088,7 +4088,7 @@ function cotRefresh(){
 }
 
 // Borrador: guarda el texto de la cotización para que no se pierda al ir a
-// Pinterest y volver. La foto NO se guarda (solo vive en memoria).
+// Google y volver. La foto NO se guarda (solo vive en memoria).
 function guardarBorradorCot(){
   try {
     const v = id => { const el = document.getElementById(id); return el ? el.value : ''; };
@@ -4096,7 +4096,6 @@ function guardarBorradorCot(){
       estado: cotEstado ? Object.assign({}, cotEstado, { foto: '' }) : null,
       cliente: v('ct-cliente'),
       tel: v('ct-tel'),
-      link: v('ct-link'),
       busqueda: v('ct-buscar'),
       monto: v('ct-monto'),
       moneda: v('ct-moneda'),
@@ -4135,18 +4134,14 @@ function pintarResultadoCotizacion(){
     <div style="border-top:1px solid var(--line);margin:14px 0 12px"></div>
     <div class="titulo" style="margin:0 0 6px">Foto para la cotización</div>
     <div class="cot-foto-app">
-      <div class="prev" id="ct-foto-prev" role="button" title="Buscar en Pinterest">${cotEstado.foto ? `<img src="${esc(cotEstado.foto)}" alt="">` : '🖼'}</div>
+      <div class="prev" id="ct-foto-prev" role="button" title="Buscar fotos en Google">${cotEstado.foto ? `<img src="${esc(cotEstado.foto)}" alt="">` : '🖼'}</div>
       <div class="cuerpo">
-        <div class="hint" style="margin-bottom:6px">Subila de la galería o abrila en Pinterest. La foto <b>no se guarda</b>: solo se usa en esta cotización.</div>
+        <div class="hint" style="margin-bottom:6px">Copiala de Google Imágenes y pegala acá, o subila de la galería. La foto <b>no se guarda</b>: solo se usa en esta cotización.</div>
         <div class="fila" style="gap:6px;flex-wrap:wrap">
           <button class="btn ghost sm" type="button" id="ct-subir">📷 Subir foto</button>
           <button class="btn ghost sm" type="button" id="ct-pegar">📋 Pegar imagen</button>
-          <button class="btn ghost sm" type="button" id="ct-pinterest">🖼 Pinterest</button>
+          <button class="btn ghost sm" type="button" id="ct-fotos">🖼 Buscar en Google</button>
           ${cotEstado.foto ? `<button class="btn ghost sm" type="button" id="ct-quitar-foto">✕</button>` : ''}
-        </div>
-        <div class="fila" style="gap:6px;margin-top:6px">
-          <input id="ct-link" placeholder="…o pegá el link de la imagen" style="flex:1;min-width:0">
-          <button class="btn ghost sm" type="button" id="ct-link-btn">Usar</button>
         </div>
         <div class="hint" id="ct-busqueda" style="margin-top:6px">${cotTextoBusquedaHtml()}</div>
         <input type="file" id="ct-foto-file" accept="image/*" class="oculto">
@@ -4197,19 +4192,17 @@ function pintarResultadoCotizacion(){
     qf.remove();
     toast('Foto quitada');
   };
-  $('#ct-link-btn').onclick = cotFotoDeLink;
-  $('#ct-link').addEventListener('keydown', ev => { if(ev.key === 'Enter'){ ev.preventDefault(); cotFotoDeLink(); } });
   $('#ct-pegar').onclick = cotPegarImagen;
   $('#ct-cliente').addEventListener('input', guardarBorradorCot);
   $('#ct-tel').addEventListener('input', guardarBorradorCot);
-  $('#ct-pinterest').onclick = abrirPinterestCot;
+  $('#ct-fotos').onclick = abrirFotosCot;
   const prevCot = $('#ct-foto-prev');
-  if(prevCot) prevCot.onclick = abrirPinterestCot;
+  if(prevCot) prevCot.onclick = abrirFotosCot;
   cotRefresh();
 }
 
-// Busca el perfume en Pinterest: "Yum Yum EDP 100 ml" → "Yum Yum perfume".
-function cotBusquedaPinterest(nombre){
+// Busca el perfume en Google Imágenes: "Yum Yum EDP 100 ml" → "Yum Yum perfume".
+function cotBusquedaFotos(nombre){
   let q = String(nombre || '').trim();
   q = q.replace(/\bEau de (Parfum|Toilette)\b/gi, ' ')
     .replace(/\b(EDP|EDT|EDC|PARFUM|Elixir|Extrait)\b/gi, ' ')
@@ -4218,20 +4211,20 @@ function cotBusquedaPinterest(nombre){
     .trim();
   return q;
 }
-function cotUrlPinterest(nombre){
-  const q = cotBusquedaPinterest(nombre || (cotEstado && cotEstado.producto) || '');
+function cotUrlFotos(nombre){
+  const q = cotBusquedaFotos(nombre || (cotEstado && cotEstado.producto) || '');
   return q
-    ? 'https://www.pinterest.com/search/pins/?q=' + encodeURIComponent(q + ' perfume')
-    : 'https://www.pinterest.com/';
+    ? 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(q + ' perfume')
+    : 'https://images.google.com/';
 }
 function cotTextoBusquedaHtml(){
-  const q = cotBusquedaPinterest(cotEstado && cotEstado.producto);
+  const q = cotBusquedaFotos(cotEstado && cotEstado.producto);
   return q
-    ? `Pinterest va a buscar: <b style="color:var(--text)">${esc(q)} perfume</b>`
-    : 'Escribí el perfume para buscarlo en Pinterest.';
+    ? `Google Imágenes va a buscar: <b style="color:var(--text)">${esc(q)} perfume</b>`
+    : 'Escribí el perfume para buscarlo en Google Imágenes.';
 }
-function abrirPinterestCot(){
-  const url = cotUrlPinterest();
+function abrirFotosCot(){
+  const url = cotUrlFotos();
   const w = window.open(url, '_blank');
   if(!w) location.href = url;
 }
@@ -4251,7 +4244,7 @@ function cotGuardarFotoImg(img){
   if(prev) prev.innerHTML = `<img src="${esc(cotEstado.foto)}" alt="">`;
 }
 
-// Pega la imagen que tenés copiada (Pinterest, Google, cualquier página).
+// Pega la imagen que tenés copiada (Google Imágenes, cualquier página).
 async function cotPegarImagen(){
   if(!navigator.clipboard || !navigator.clipboard.read){
     return toast('Este navegador no deja pegar imágenes. Usá 📷 Subir foto', 'error');
@@ -4291,50 +4284,6 @@ async function cotPonerFoto(file){
   } catch(e){
     toast('No pude leer la imagen: ' + e.message, 'error');
   }
-}
-
-// Pega el link de la imagen de Pinterest (i.pinimg.com); se carga sin guardarla.
-async function cotFotoDeLink(){
-  const inp = $('#ct-link');
-  const url = String((inp && inp.value) || '').trim();
-  if(!url) return toast('Pegá el link de la imagen', 'error');
-  const esPinimg = /^https:\/\/([a-z0-9-]+\.)?pinimg\.com\//i.test(url);
-  const pareceImagen = esPinimg || /\.(jpe?g|png|webp)(\?|$)/i.test(url);
-  toast('🖼 Buscando la imagen…');
-  let img = null;
-  // 1) Si es una dirección de imagen, se carga directo (rápido, sin depender de Google).
-  if(pareceImagen){
-    try {
-      img = await new Promise((res, rej) => {
-        const i = new Image();
-        i.crossOrigin = 'anonymous';
-        i.onload = () => res(i);
-        i.onerror = () => rej(new Error('no'));
-        i.src = url;
-      });
-    } catch(e){ img = null; }
-  }
-  // 2) Si no, la trae Google (pin, o una imagen que el teléfono no deja leer).
-  if(!img){
-    try {
-      const t = token();
-      if(!t) throw new Error('Falta la clave');
-      const r = await fetch(API + '?action=imagen&token=' + encodeURIComponent(t) + '&url=' + encodeURIComponent(url) + '&t=' + Date.now());
-      const j = await r.json();
-      if(!j || !j.ok) throw new Error((j && j.error) || 'No pude traer la imagen');
-      img = await new Promise((res, rej) => {
-        const i = new Image();
-        i.onload = () => res(i);
-        i.onerror = () => rej(new Error('La imagen no se pudo abrir'));
-        i.src = j.dataUrl;
-      });
-    } catch(e){
-      return toast('No pude usar ese link. En el celular: abrí el pin, dejá presionada la foto → Guardar imagen, y usá 📷 Subir foto');
-    }
-  }
-  cotGuardarFotoImg(img);
-  if(inp) inp.value = '';
-  toast('🖼 Foto lista para la cotización');
 }
 
 function textoCotizacionCel(){
@@ -4506,7 +4455,7 @@ function pintarCotizar(app){
   });
   $('#ct-calcular').onclick = calcularCotizacion;
 
-  // Restaura la cotización en curso (si volviste de Pinterest, no se perdió nada).
+  // Restaura la cotización en curso (si volviste de Google, no se perdió nada).
   const b = leerBorradorCot();
   if(b){
     if(b.busqueda) $('#ct-buscar').value = b.busqueda;
@@ -4517,7 +4466,6 @@ function pintarCotizar(app){
       pintarResultadoCotizacion();
       if(b.cliente) $('#ct-cliente').value = b.cliente;
       if(b.tel) $('#ct-tel').value = b.tel;
-      if(b.link) $('#ct-link').value = b.link;
       guardarBorradorCot();
     }
   }
