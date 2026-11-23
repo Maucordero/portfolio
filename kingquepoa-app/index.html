@@ -311,7 +311,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.41.0';
+const VERSION = '1.42.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', promo:'kq_promo_v1', sinmini:'kq_sinmini_v1' };
@@ -2767,6 +2767,16 @@ function pintarSinMini(app){
   pintarListaSinMini();
 }
 
+function esMasNuevaProdCel(a, b){
+  const fa = String(a.fecha_publicacion || '');
+  const fb = String(b.fecha_publicacion || '');
+  if(fa !== fb) return fa > fb;
+  const aa = String(a.actualizado || '');
+  const ab = String(b.actualizado || '');
+  if(aa !== ab) return aa > ab;
+  return Number(a.id) > Number(b.id);
+}
+
 function pintarListaSinMini(){
   const cont = $('#sm-lista');
   if(!cont) return;
@@ -2778,8 +2788,15 @@ function pintarListaSinMini(){
   const base = !q ? items : (maxRel >= 50 ? conRel.filter(v => v.r >= 50).map(v => v.x) : conRel.filter(v => v.r > 0).map(v => v.x));
   const grupos = agruparProdCel(base);
   let filas = grupos.map(ofertas => {
-    ofertas.sort((a,b) => num(a.costo_crc) - num(b.costo_crc));
-    return { x: ofertas[0], ofertas: ofertas.slice(1), rel: Math.max(...ofertas.map(z => relevanciaProdCel(z, q))) };
+    // Dentro del mismo distribuidor manda la publicaci?n m?s reciente.
+    const porDist = new Map();
+    for(const x of ofertas){
+      const k = String(x.distribuidor || '');
+      const prev = porDist.get(k);
+      if(!prev || esMasNuevaProdCel(x, prev)) porDist.set(k, x);
+    }
+    const seleccion = [...porDist.values()].sort((a,b) => num(a.costo_crc) - num(b.costo_crc));
+    return { x: seleccion[0], ofertas: seleccion.slice(1), rel: Math.max(...seleccion.map(z => relevanciaProdCel(z, q))) };
   });
   if(q) filas.sort((a,b) => (b.rel - a.rel) || (num(a.x.costo_crc) - num(b.x.costo_crc)) || norm(a.x.nombre).localeCompare(norm(b.x.nombre), 'es'));
   else if(todos) filas.sort((a,b) => num(a.x.costo_crc) - num(b.x.costo_crc) || norm(a.x.nombre).localeCompare(norm(b.x.nombre), 'es'));
