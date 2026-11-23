@@ -311,7 +311,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.40.0';
+const VERSION = '1.41.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', promo:'kq_promo_v1', sinmini:'kq_sinmini_v1' };
@@ -2645,20 +2645,100 @@ async function fichaSinMiniaturaCel(x){
   return await new Promise(r => final.toBlob(r, 'image/png'));
 }
 
-function claveProdCel(x){
-  let s = norm(x.nombre);
-  const stop = new Set(['eau','de','parfum','toilette','cologne','edp','edt','edc','extrait','elixir','intense','intensa','tester','set','regalo','gift','ml','spray','natural','vaporisateur','the','by','and','for','men','women','homme','femme','hombre','mujer','unisex']);
-  const marca = norm(x.marca).split(' ').filter(Boolean);
+function normalizarProdCel(s){
+  return norm(s).replace(/(\d)\s*([a-z])/g, '$1 $2');
+}
+function concentracionProdCel(x){
+  const t = normalizarProdCel(x.concentracion || '') + ' ' + normalizarProdCel(x.nombre || '');
+  if(/\bedp\b|eau de parfum/.test(t)) return 'edp';
+  if(/\bedt\b|eau de toilette/.test(t)) return 'edt';
+  if(/\bedc\b|eau de cologne/.test(t)) return 'edc';
+  if(/extrait/.test(t)) return 'extrait';
+  if(/elixir/.test(t)) return 'elixir';
+  if(/\bparfum\b/.test(t)) return 'parfum';
+  return '';
+}
+function generoProdCel(x){
+  const cat = norm(x.categoria || '');
+  if(cat === 'mujer') return 'femme';
+  if(cat === 'hombre') return 'men';
+  if(cat === 'unisex') return '';
+  const s = normalizarProdCel(x.nombre || '');
+  if(/\b(femme|woman|women|her|mujer|dama|girl|nina)\b/.test(s)) return 'femme';
+  if(/\b(men|man|homme|hombre|him|caballero|boy|nino)\b/.test(s)) return 'men';
+  return '';
+}
+function baseProdCel(x){
+  let s = normalizarProdCel(x.nombre || '').replace(/\([^)]*\)/g, ' ');
+  const marca = normalizarProdCel(x.marca || '').split(' ').filter(Boolean);
+  const stop = new Set(['eau','de','parfum','toilette','cologne','edp','edt','edc','extrait','ml','spray','natural','vaporisateur','the','by','and','for','pour','men','man','homme','hombre','him','caballero','unisex','tester','refillable','refill']);
   const toks = s.split(' ').filter(t => t && !stop.has(t) && !marca.includes(t) && !/^\d+$/.test(t));
   toks.sort();
-  let c = norm(x.concentracion || '');
-  if(!c){
-    if(/\bedp\b|eau de parfum/.test(s)) c = 'edp';
-    else if(/\bedt\b|eau de toilette/.test(s)) c = 'edt';
-    else if(/elixir/.test(s)) c = 'elixir';
-    else if(/parfum/.test(s)) c = 'parfum';
+  return toks.join(' ') + '|' + concentracionProdCel(x);
+}
+function agruparProdCel(lista){
+  const buckets = new Map();
+  for(const x of lista){
+    const k = baseProdCel(x);
+    if(!buckets.has(k)) buckets.set(k, []);
+    buckets.get(k).push(x);
   }
-  return toks.join(' ') + '|' + (x.ml || '') + '|' + c;
+  const out = [];
+  for(const offers of buckets.values()){
+    const gens = new Set(offers.map(generoProdCel).filter(Boolean));
+    let sub = [offers];
+    if(gens.has('men') && gens.has('femme')){
+      const m = new Map();
+      for(const x of offers){
+        const g = generoProdCel(x) || 'u';
+        if(!m.has(g)) m.set(g, []);
+        m.get(g).push(x);
+      }
+      const unknown = m.get('u') || [];
+      m.delete('u');
+      if(unknown.length){
+        const target = [...m.values()].sort((a,b) => b.length - a.length)[0];
+        if(target) target.push(...unknown); else out.push(unknown);
+      }
+      sub = [...m.values()];
+    }
+    for(const grupo of sub){
+      const mls = [...new Set(grupo.map(x => num(x.ml) || 0).filter(Boolean))];
+      if(mls.length <= 1){ out.push(grupo); continue; }
+      const por = new Map();
+      for(const x of grupo){
+        const k = num(x.ml) || 0;
+        if(!por.has(k)) por.set(k, []);
+        por.get(k).push(x);
+      }
+      const unknown = por.get(0) || [];
+      por.delete(0);
+      if(unknown.length){
+        const target = [...por.values()].sort((a,b) =>
+          Math.min(...a.map(z => num(z.costo_crc))) - Math.min(...b.map(z => num(z.costo_crc))))[0];
+        if(target) target.push(...unknown); else out.push(unknown);
+      }
+      out.push(...por.values());
+    }
+  }
+  return out;
+}
+function relevanciaProdCel(x, q){
+  if(!q) return 0;
+  const n = normalizarProdCel(x.nombre || '');
+  const m = normalizarProdCel(x.marca || '');
+  const d = normalizarProdCel(x.distribuidor || '');
+  const qs = q.split(' ').filter(Boolean);
+  if(n.startsWith(q)) return 100;
+  if(m.startsWith(q)) return 95;
+  if(n.includes(q)) return 85;
+  if(m.includes(q)) return 80;
+  if(qs.length > 1 && qs.every(t => n.split(' ').includes(t))) return 75;
+  if(qs.every(t => m.split(' ').includes(t))) return 72;
+  if(qs.every(t => (n + ' ' + m).split(' ').includes(t))) return 70;
+  if(d.includes(q)) return 20;
+  if(normalizarProdCel(x.descripcion || '').includes(q)) return 10;
+  return 0;
 }
 
 function pintarSinMini(app){
@@ -2690,27 +2770,20 @@ function pintarSinMini(app){
 function pintarListaSinMini(){
   const cont = $('#sm-lista');
   if(!cont) return;
-  const q = norm(sinminiFiltro);
+  const q = normalizarProdCel(sinminiFiltro).trim();
   const todos = sinminiDist === 'todos';
-  let items = (Array.isArray(sinmini.items) ? sinmini.items : []).filter(x =>
-    (todos || String(x.distribuidor || '') === sinminiDist) &&
-    (!q || norm([x.nombre,x.marca,x.distribuidor,x.categoria,x.familia,x.concentracion,x.ml,x.descripcion].join(' ')).includes(q))
-  );
-  let filas;
-  if(todos){
-    const grupos = new Map();
-    for(const x of items){
-      const k = claveProdCel(x);
-      if(!grupos.has(k)) grupos.set(k, []);
-      grupos.get(k).push(x);
-    }
-    filas = [...grupos.values()].map(ofertas => {
-      ofertas.sort((a,b) => num(a.costo_crc) - num(b.costo_crc));
-      return { x: ofertas[0], ofertas: ofertas.slice(1) };
-    }).sort((a,b) => num(a.x.costo_crc) - num(b.x.costo_crc) || norm(a.x.nombre).localeCompare(norm(b.x.nombre), 'es'));
-  } else {
-    filas = items.slice().sort((a,b) => norm(a.nombre).localeCompare(norm(b.nombre), 'es')).map(x => ({ x, ofertas: [] }));
-  }
+  const items = (Array.isArray(sinmini.items) ? sinmini.items : []).filter(x => todos || String(x.distribuidor || '') === sinminiDist);
+  const conRel = items.map(x => ({ x, r: relevanciaProdCel(x, q) }));
+  const maxRel = Math.max(0, ...conRel.map(v => v.r));
+  const base = !q ? items : (maxRel >= 50 ? conRel.filter(v => v.r >= 50).map(v => v.x) : conRel.filter(v => v.r > 0).map(v => v.x));
+  const grupos = agruparProdCel(base);
+  let filas = grupos.map(ofertas => {
+    ofertas.sort((a,b) => num(a.costo_crc) - num(b.costo_crc));
+    return { x: ofertas[0], ofertas: ofertas.slice(1), rel: Math.max(...ofertas.map(z => relevanciaProdCel(z, q))) };
+  });
+  if(q) filas.sort((a,b) => (b.rel - a.rel) || (num(a.x.costo_crc) - num(b.x.costo_crc)) || norm(a.x.nombre).localeCompare(norm(b.x.nombre), 'es'));
+  else if(todos) filas.sort((a,b) => num(a.x.costo_crc) - num(b.x.costo_crc) || norm(a.x.nombre).localeCompare(norm(b.x.nombre), 'es'));
+  else filas.sort((a,b) => norm(a.x.nombre).localeCompare(norm(b.x.nombre), 'es'));
   cont.innerHTML = filas.length ? filas.map(({ x, ofertas }) => {
     const meta = [x.marca,x.categoria,x.concentracion,x.ml ? x.ml + ' ml' : '',x.familia].filter(Boolean).join(' · ');
     const otras = ofertas.map(o => `${esc(o.distribuidor)} ${money(o.costo_crc)}`).join(' · ');
