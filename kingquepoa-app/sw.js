@@ -2,7 +2,7 @@
    Guarda la app para que abra sin internet.
    Los datos del inventario los maneja la propia app (localStorage). */
 
-const CACHE = 'kq-app-v69';
+const CACHE = 'kq-app-v70';
 const ARCHIVOS = [
   './',
   './index.html',
@@ -24,9 +24,20 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
+    caches.keys().then(keys => {
+      const eraActualizacion = keys.some(k => k !== CACHE);
+      return Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+        .then(() => self.clients.claim())
+        .then(() => {
+          // Si había una versión anterior, recargamos las pestañas abiertas
+          // para que muestren la app nueva sin que el usuario tenga que hacer nada.
+          if (eraActualizacion) {
+            return self.clients.matchAll({ type: 'window' }).then(clientes => {
+              clientes.forEach(c => { try { c.navigate(c.url); } catch (_) {} });
+            });
+          }
+        });
+    })
   );
 });
 
