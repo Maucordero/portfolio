@@ -318,7 +318,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.46.0';
+const VERSION = '1.47.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', promo:'kq_promo_v1', sinmini:'kq_sinmini_v1' };
@@ -2596,6 +2596,34 @@ function relevanciaProdCel(x, q){
   return 0;
 }
 
+// Perfumes que ya est?n en el Inventario principal (misma regla que la PC: por producto_id o por nombre).
+function invDeSinMini(x){
+  if(x.producto_id) return datos.inventario.find(p => String(p.id) === String(x.producto_id)) || null;
+  return datos.inventario.find(p => norm(p.nombre) === norm(x.nombre)) || null;
+}
+// Solo informativo: si un distribuidor vende m?s barato un perfume que ya ten?s. No cambia precios.
+function diferenciasCelHTML(){
+  const mapa = new Map();
+  for(const x of (Array.isArray(sinmini.items) ? sinmini.items : [])){
+    const inv = invDeSinMini(x);
+    if(!inv || !(num(x.costo_crc) > 0)) continue;
+    const c = costoDe(inv);
+    if(!c) continue;
+    const prev = mapa.get(inv.id);
+    if(!prev || num(x.costo_crc) < num(prev.oferta.costo_crc)) mapa.set(inv.id, { inv, oferta: x, actual: num(c.costo_crc) });
+  }
+  const filas = [...mapa.values()]
+    .map(o => ({ ...o, ahorro: o.actual - num(o.oferta.costo_crc) }))
+    .filter(f => f.ahorro > 0)
+    .sort((a, b) => b.ahorro - a.ahorro);
+  if(!filas.length) return '';
+  return `<details class="card" style="margin-bottom:10px" open>
+    <summary style="cursor:pointer;font-weight:600">?? ${filas.length} perfume${filas.length === 1 ? '' : 's'} de tu inventario ${filas.length === 1 ? 'se consigue' : 'se consiguen'} m?s barato con un distribuidor (solo informativo: no cambia tus precios)</summary>
+    ${filas.map(f => `<div style="margin-top:8px"><b style="font-size:13px">${esc(f.inv.nombre)}</b>
+      <div class="hint">Tu costo ${money(f.actual)} ? M?s barato ${money(f.oferta.costo_crc)} (${esc(f.oferta.distribuidor || '')}) ? Diferencia ?${money(f.ahorro)}</div></div>`).join('')}
+  </details>`;
+}
+
 function pintarSinMini(app){
   if(!esDueno()){ vista = 'stock'; return render(); }
   const items = Array.isArray(sinmini.items) ? sinmini.items : [];
@@ -2610,7 +2638,7 @@ function pintarSinMini(app){
           ${dists.map(d => `<option value="${esc(d)}"${sinminiDist === d ? ' selected' : ''}>${esc(d)}</option>`).join('')}
         </select>
       </div>
-      <div class="hint" style="padding:0 2px 8px">${agruparProdCel(items).length} perfumes · ${dists.length} distribuidor${dists.length === 1 ? '' : 'es'} · Catálogo de proveedores, sin foto</div>
+      <div class="hint" style="padding:0 2px 8px">${agruparProdCel(items.filter(x => !invDeSinMini(x))).length} perfumes · ${dists.length} distribuidor${dists.length === 1 ? '' : 'es'} · Catálogo de proveedores, sin foto</div>
     </div>
     ${sinminiError ? `<div class="card" style="border-color:var(--red)"><div class="hint" style="color:var(--red)">${esc(sinminiError)}</div><button class="btn ghost sm" id="sm-ref" style="margin-top:8px">⟳ Reintentar</button></div>` : ''}
     ${!items.length && !sinminiError ? `<div class="card"><div class="hint">Cargando catálogo de distribuidores…</div></div>` : ''}
@@ -2637,7 +2665,7 @@ function pintarListaSinMini(){
   if(!cont) return;
   const q = normalizarProdCel(sinminiFiltro).trim();
   const todos = sinminiDist === 'todos';
-  const items = (Array.isArray(sinmini.items) ? sinmini.items : []).filter(x => todos || String(x.distribuidor || '') === sinminiDist);
+  const items = (Array.isArray(sinmini.items) ? sinmini.items : []).filter(x => (todos || String(x.distribuidor || '') === sinminiDist) && !invDeSinMini(x));
   const conRel = items.map(x => ({ x, r: relevanciaProdCel(x, q) }));
   const maxRel = Math.max(0, ...conRel.map(v => v.r));
   const base = !q ? items : (maxRel >= 50 ? conRel.filter(v => v.r >= 50).map(v => v.x) : conRel.filter(v => v.r > 0).map(v => v.x));
@@ -2656,7 +2684,7 @@ function pintarListaSinMini(){
   if(q) filas.sort((a,b) => (b.rel - a.rel) || (num(a.x.costo_crc) - num(b.x.costo_crc)) || norm(a.x.nombre).localeCompare(norm(b.x.nombre), 'es'));
   else if(todos) filas.sort((a,b) => num(a.x.costo_crc) - num(b.x.costo_crc) || norm(a.x.nombre).localeCompare(norm(b.x.nombre), 'es'));
   else filas.sort((a,b) => norm(a.x.nombre).localeCompare(norm(b.x.nombre), 'es'));
-  cont.innerHTML = filas.length ? filas.map(({ x, ofertas }) => {
+  cont.innerHTML = diferenciasCelHTML() + (filas.length ? filas.map(({ x, ofertas }) => {
     const meta = [x.marca,x.categoria,x.concentracion,x.ml ? x.ml + ' ml' : '',x.familia].filter(Boolean).join(' · ');
     const otras = ofertas.map(o => `${esc(o.distribuidor)} ${money(o.costo_crc)}`).join(' · ');
     return `<div class="card" style="margin-bottom:10px">
@@ -2676,7 +2704,7 @@ function pintarListaSinMini(){
         <button class="btn sm" data-sm-wa="${esc(String(x.id))}">📲 Enviar por WhatsApp</button>
       </div>
     </div>`;
-  }).join('') : `<div class="card"><div class="hint">No hay productos que coincidan con la búsqueda.</div></div>`;
+  }).join('') : `<div class="card"><div class="hint">No hay productos que coincidan con la búsqueda.</div></div>`);
   cont.querySelectorAll('[data-sm-copiar]').forEach(b => {
     b.onclick = () => {
       const x = (sinmini.items || []).find(z => String(z.id) === b.dataset.smCopiar);
