@@ -5297,6 +5297,7 @@ document.querySelectorAll('nav button').forEach(b => {
   });
 });
 $('#btn-sync').addEventListener('click', () => {
+  try { if(window.__kqSWReg && window.__kqSWReg.update) window.__kqSWReg.update(); } catch(e){}
   sincronizar(false);
   if(token()){
     refrescarEstadoVentas();
@@ -5388,9 +5389,24 @@ document.addEventListener('click', ev => {
     if(token() && vista === 'numeros') cargarNumeros(false);
   });
 
+  let swReg = null;
   if('serviceWorker' in navigator){
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    window.addEventListener('load', async () => {
+      try {
+        swReg = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
+        window.__kqSWReg = swReg;
+        if(swReg.update) swReg.update();
+        // Si el navegador activa una versión nueva, recargamos una sola vez.
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if(window.__kqRecargando) return;
+          window.__kqRecargando = true;
+          location.reload();
+        });
+      } catch(e){}
+    });
+    // Al volver a la app, revisar si hay una versión nueva.
+    document.addEventListener('visibilitychange', () => {
+      if(document.visibilityState === 'visible' && swReg && swReg.update) swReg.update();
     });
   }
 })();
