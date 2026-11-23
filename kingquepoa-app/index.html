@@ -317,7 +317,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.44.0';
+const VERSION = '1.45.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', promo:'kq_promo_v1', sinmini:'kq_sinmini_v1' };
@@ -2605,18 +2605,6 @@ async function fichaSinMiniaturaCel(x){
   for(const ln of envolverTexto(ctx, x.nombre, RIGHT - M)){ ctx.fillText(ln, M, y); y += 46; }
   const meta = [x.categoria, x.concentracion, x.ml ? x.ml + ' ml' : '', x.familia].filter(Boolean).join(' · ');
   if(meta){ ctx.fillStyle = '#5b5f66'; ctx.font = '20px ' + FUENTE; ctx.fillText(meta, M, y); y += 34; }
-  const desc = String(x.descripcion || '').trim().replace(/(^|\n)[^\p{L}\p{N}\n]+\s*(?=Notas:)/gu, '$1');
-  if(desc){
-    ctx.font = '21px ' + FUENTE;
-    const lineas = envolverTexto(ctx, desc, RIGHT - M - 56);
-    const alto = lineas.length * 31 + 48;
-    ctx.fillStyle = '#fbf4df'; ctx.fillRect(M, y, RIGHT - M, alto);
-    ctx.strokeStyle = '#ecd9a8'; ctx.lineWidth = 2; ctx.strokeRect(M, y, RIGHT - M, alto);
-    ctx.fillStyle = '#171a21';
-    let yy = y + 24;
-    for(const ln of lineas){ ctx.fillText(ln, M + 28, yy); yy += 31; }
-    y += alto + 30;
-  }
   const contado = Math.round(num(x.precio_venta_crc));
   const pagos = Math.round(num(x.precio_pagos_crc));
   const base = Math.floor(pagos / 2);
