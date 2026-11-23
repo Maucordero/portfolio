@@ -2,11 +2,12 @@
    Guarda la app para que abra sin internet.
    Los datos del inventario los maneja la propia app (localStorage). */
 
-const CACHE = 'kq-app-v76';
+const CACHE = 'kq-app-v77';
 const ARCHIVOS = [
   './',
   './index.html',
   './factura.js',
+  './ficha.js',
   './manifest.webmanifest',
   './logo.png',
   './logo-gracias.png',
