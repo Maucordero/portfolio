@@ -309,6 +309,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="factura.js"></script>
+<script src="ficha.js"></script>
 <script>
 /* ============================================================
    King Quepoa · app del celular
@@ -317,7 +318,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.45.0';
+const VERSION = '1.46.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', promo:'kq_promo_v1', sinmini:'kq_sinmini_v1' };
@@ -573,21 +574,7 @@ function pintarEstado(offline){
 
 /* ---------------- textos ---------------- */
 function textoInfo(p){
-  const cfg = datos.config || {};
-  const g = genero(p.categoria);
-  const ml = p.ml ? (num(p.ml) + ' ML') : '';
-  const l = [];
-  l.push('🧴 ' + p.nombre);
-  if(g) l.push(g);
-  if(p.descripcion){ l.push(''); l.push(String(p.descripcion)); }
-  l.push('');
-  if(ml) l.push('📦 Presentación: ' + ml);
-  if(num(p.precio_crc)) l.push('💸 Precio: ' + money(p.precio_crc));
-  if(num(p.precio_pagos_crc)) l.push('💳 A 2 pagos: ' + money(p.precio_pagos_crc));
-  if(cfg.envios) l.push('🚚 Envíos: ' + cfg.envios);
-  l.push('');
-  l.push('💬 Escribinos si querés asesoría para elegir tu perfume.');
-  return l.join('\n');
+  return FichaKQ.texto(p, { envios: (datos.config || {}).envios });
 }
 
 function textoCatalogo(){
@@ -2071,73 +2058,8 @@ async function cargarFotoGrande(p){
 // Arma la imagen blanca con la foto, el nombre, el género, los ML, el precio y "A pagos"
 // (el mismo estilo que el botón "Info" de la app de la PC).
 async function imagenInfo(p){
-  const bmp = await cargarFotoGrande(p);
-  if(!bmp) return null;
-  const W = 1080, M = 60, maxLado = 980;
-  const esc = Math.min(maxLado / bmp.width, maxLado / bmp.height, 1);
-  const iw = Math.round(bmp.width * esc), ih = Math.round(bmp.height * esc);
-  const anchoTexto = W - M * 2;
-
-  const precio = money(num(p.precio_crc));
-  const pagos = money(num(p.precio_pagos_crc));
-  const desc = String(p.descripcion || '').trim();
-  const genImg = String(p.categoria||'') === 'Hombre' ? 'Fragancia de hombre'
-               : String(p.categoria||'') === 'Mujer'  ? 'Fragancia de mujer'
-               : String(p.categoria||'') === 'Unisex' ? 'Perfume unisex' : '';
-  const mlTxt = num(p.ml) ? num(p.ml) + ' ML' : '';
-  const FUENTE = "'Segoe UI', Roboto, Arial, sans-serif";
-
-  const cm = document.createElement('canvas'); cm.width = W; cm.height = 10;
-  const mc = cm.getContext('2d');
-  mc.font = 'bold 50px ' + FUENTE;
-  const lNombre = envolverTexto(mc, p.nombre, anchoTexto);
-  mc.font = 'bold 46px ' + FUENTE;
-  const wMl = mlTxt ? Math.ceil(mc.measureText(mlTxt).width) + 64 : 0;
-  mc.font = '30px ' + FUENTE;
-  const lDesc = desc ? envolverTexto(mc, desc, anchoTexto) : [];
-
-  const hNombre = lNombre.length * 60;
-  const hGen = genImg ? 48 : 0;
-  const hMl = mlTxt ? 88 : 0;
-  const hPrecio = 92, hPagos = 52;
-  const DESC_LH = 42, DESC_GAP = 16;
-  const hDesc = lDesc.length ? 30 + lDesc.reduce((s, ln) => s + (ln ? DESC_LH : DESC_GAP), 0) : 0;
-  const H = M + ih + 34 + hNombre + hGen + hMl + 24 + hPrecio + hPagos + hDesc + M;
-
-  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-  const ctx = cv.getContext('2d');
-  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
-  ctx.drawImage(bmp, (W - iw) / 2, M, iw, ih);
-
-  let y = M + ih + 34;
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = '#171a21'; ctx.font = 'bold 50px ' + FUENTE;
-  for(const ln of lNombre){ ctx.fillText(ln, M, y); y += 60; }
-  if(genImg){
-    ctx.fillStyle = '#8a6b1e'; ctx.font = 'bold 36px ' + FUENTE;
-    ctx.fillText(genImg, M, y); y += 48;
-  }
-  if(mlTxt){
-    const bh = 74, by = y + 2;
-    ctx.fillStyle = '#c9a24b';
-    rrect(ctx, M, by, wMl, bh, 20); ctx.fill();
-    ctx.fillStyle = '#171a21'; ctx.font = 'bold 46px ' + FUENTE;
-    ctx.fillText(mlTxt, M + 32, by + 13);
-    y = by + bh + 12;
-  }
-  y += 24;
-  ctx.fillStyle = '#c9a24b'; ctx.font = 'bold 72px ' + FUENTE;
-  ctx.fillText(precio, M, y); y += 92;
-  ctx.fillStyle = '#1f7a48'; ctx.font = 'bold 34px ' + FUENTE;
-  ctx.fillText('A pagos: ' + pagos, M, y); y += 52;
-  if(lDesc.length){
-    y += 30; ctx.fillStyle = '#333a45'; ctx.font = '30px ' + FUENTE;
-    for(const ln of lDesc){
-      if(!ln){ y += DESC_GAP; continue; }
-      ctx.fillText(ln, M, y); y += DESC_LH;
-    }
-  }
-  return await new Promise(r => cv.toBlob(r, 'image/png'));
+  const bmp = await cargarFotoGrande(p).catch(() => null);
+  return await FichaKQ.imagen(p, { bmp, recargo: (datos.config || {}).recargo_pagos });
 }
 
 // Muestra la imagen para guardarla a mano (cuando el teléfono no deja compartir ni copiar).
@@ -2566,77 +2488,11 @@ async function cargarSinMini(mostrar){
 }
 
 function textoFichaSinMiniCel(x){
-  return `${x.nombre}\n\n${x.descripcion || ''}\n\nContado: ${money(x.precio_venta_crc)}\nA 2 pagos: ${money(x.precio_pagos_crc)}\n\nCualquier duda me avisás 🙌`;
+  return FichaKQ.texto(x, { envios: (datos.config || {}).envios });
 }
 
 async function fichaSinMiniaturaCel(x){
-  const W = 1080, M = 80, RIGHT = W - M;
-  const FUENTE = "'Segoe UI', Arial, sans-serif";
-  const cv = document.createElement('canvas'); cv.width = W; cv.height = 5000;
-  const ctx = cv.getContext('2d');
-  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, cv.height);
-  ctx.textBaseline = 'top';
-  let y = 46;
-  let logo = null;
-  try { logo = await cargarImagenURL('./logo.png'); } catch(e){}
-  if(logo){
-    const lado = 132, e = Math.min(lado / logo.width, lado / logo.height);
-    ctx.drawImage(logo, M, y, logo.width * e, logo.height * e);
-  }
-  const xN = M + 160;
-  ctx.textAlign = 'left'; ctx.fillStyle = '#171a21'; ctx.font = 'bold 30px ' + FUENTE;
-  ctx.fillText('King Quepoa', xN, y + 2);
-  ctx.fillStyle = '#5b5f66'; ctx.font = '20px ' + FUENTE;
-  ctx.fillText('Perfumería · Quepos, Costa Rica', xN, y + 44);
-  const tel = telefonoNegocio();
-  if(tel) ctx.fillText('WhatsApp ' + tel, xN, y + 72);
-  ctx.textAlign = 'right'; ctx.fillStyle = '#171a21'; ctx.font = 'bold 40px ' + FUENTE;
-  ctx.fillText('INFORMACIÓN', RIGHT, y);
-  ctx.fillStyle = '#8a8f99'; ctx.font = '18px ' + FUENTE;
-  ctx.fillText('Ficha de producto', RIGHT, y + 52);
-  y += 160;
-  ctx.strokeStyle = '#e6d6a8'; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(M, y); ctx.lineTo(RIGHT, y); ctx.stroke();
-  y += 30;
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#8a6b1e'; ctx.font = 'bold 21px ' + FUENTE;
-  ctx.fillText(String(x.marca || '').toUpperCase(), M, y); y += 30;
-  ctx.fillStyle = '#171a21'; ctx.font = 'bold 38px ' + FUENTE;
-  for(const ln of envolverTexto(ctx, x.nombre, RIGHT - M)){ ctx.fillText(ln, M, y); y += 46; }
-  const meta = [x.categoria, x.concentracion, x.ml ? x.ml + ' ml' : '', x.familia].filter(Boolean).join(' · ');
-  if(meta){ ctx.fillStyle = '#5b5f66'; ctx.font = '20px ' + FUENTE; ctx.fillText(meta, M, y); y += 34; }
-  const contado = Math.round(num(x.precio_venta_crc));
-  const pagos = Math.round(num(x.precio_pagos_crc));
-  const base = Math.floor(pagos / 2);
-  const cajaH = 150, medio = (RIGHT - M - 20) / 2;
-  ctx.fillStyle = '#e8f5ee'; ctx.fillRect(M, y, medio, cajaH);
-  ctx.strokeStyle = '#cfe6d8'; ctx.lineWidth = 2; ctx.strokeRect(M, y, medio, cajaH);
-  ctx.fillStyle = '#0b6e5b'; ctx.font = 'bold 18px ' + FUENTE; ctx.fillText('PRECIO DE CONTADO', M + 26, y + 22);
-  ctx.fillStyle = '#171a21'; ctx.font = 'bold 38px ' + FUENTE; ctx.fillText(money(contado), M + 26, y + 56);
-  const x2 = M + medio + 20;
-  ctx.fillStyle = '#fbf4df'; ctx.fillRect(x2, y, medio, cajaH);
-  ctx.strokeStyle = '#ecd9a8'; ctx.strokeRect(x2, y, medio, cajaH);
-  ctx.fillStyle = '#8a6b1e'; ctx.font = 'bold 18px ' + FUENTE; ctx.fillText('A 2 PAGOS', x2 + 26, y + 22);
-  ctx.fillStyle = '#171a21'; ctx.font = 'bold 38px ' + FUENTE; ctx.fillText(money(pagos), x2 + 26, y + 56);
-  ctx.fillStyle = '#5b5f66'; ctx.font = '18px ' + FUENTE;
-  ctx.fillText(`2 pagos de ${money(base)} y ${money(pagos - base)}`, x2 + 26, y + 108);
-  y += cajaH + 34;
-  const pago = String(((datos.config || {}).datos_pago) || '').trim();
-  if(pago){
-    ctx.textAlign = 'center'; ctx.fillStyle = '#c9a24b'; ctx.font = 'bold 21px ' + FUENTE;
-    ctx.fillText('Datos para pagar (SINPE):', W / 2, y); y += 30;
-    ctx.fillStyle = '#5b5f66'; ctx.font = '20px ' + FUENTE;
-    for(const ln of pago.split('\n')){ ctx.fillText(ln, W / 2, y); y += 27; }
-    y += 8;
-  }
-  ctx.textAlign = 'center'; ctx.fillStyle = '#8a6b1e'; ctx.font = '22px ' + FUENTE;
-  for(const ln of envolverTexto(ctx, '¡Gracias por tu preferencia en King Quepoa, tu esencia, tu estilo, tu reino!', RIGHT - M)){
-    ctx.fillText(ln, W / 2, y); y += 31;
-  }
-  const H = Math.ceil(y) + 36;
-  const final = document.createElement('canvas'); final.width = W; final.height = H;
-  final.getContext('2d').drawImage(cv, 0, 0, W, H, 0, 0, W, H);
-  return await new Promise(r => final.toBlob(r, 'image/png'));
+  return await FichaKQ.imagen(x, { bmp: null });
 }
 
 function normalizarProdCel(s){
