@@ -294,8 +294,8 @@
   <button data-v="vender" class="oculto"><i>🛒</i><span>Vender</span></button>
   <button data-v="cobros" class="oculto"><i>💰</i><span>Cobros</span></button>
   <button data-v="numeros" class="oculto"><i>📊</i><span>Números</span></button>
-  <button data-v="promo" class="oculto"><i>📇</i><span>Promo</span></button>
   <button data-v="cotizar" class="oculto"><i>🧮</i><span>Cotizar</span></button>
+  <button data-v="sinmini" class="oculto"><i>🧾</i><span>Sin mini</span></button>
   <button data-v="ajustes" class="oculto"><i>⚙️</i><span>Ajustes</span></button>
 </nav>
 
@@ -311,10 +311,10 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.38.0';
+const VERSION = '1.39.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
-const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', promo:'kq_promo_v1' };
+const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', promo:'kq_promo_v1', sinmini:'kq_sinmini_v1' };
 // Clave vieja de la lista "Para comprar" de Cotizar (se borra sola al abrir).
 const LS_POR_COMPRAR_VIEJO = 'kq_por_comprar_v1';
 // Borrador de la cotización en curso (solo el texto; la foto NUNCA se guarda).
@@ -326,6 +326,8 @@ let cobrosFiltro = 'porcobrar';
 let abonosPendientes = [];
 let nums = null, numsError = '', numsFiltro = 'todas', cargandoNums = false;
 let costos = null, costosError = '', cargandoCostos = false;
+let sinmini = leerLS(LS.sinmini, null) || { items:[], guardado:null };
+let sinminiError = '', cargandoSinMini = false, sinminiFiltro = '', sinminiIntentado = false;
 let cotEstado = null;   // cotización en pantalla (no se guarda en ningún lado)
 let vista = 'stock';
 let filtro = { q:'', cat:'Todos', soloStock:false };
@@ -477,7 +479,7 @@ function guardarAbonosOn(v){
 /* ---------------- roles: dueño vs visitante ---------------- */
 function aplicarRol(){
   const dueno = esDueno();
-  const privadas = ['vender','cobros','numeros','promo','cotizar','ajustes'];
+  const privadas = ['vender','cobros','numeros','cotizar','sinmini','ajustes'];
   let visibles = 0;
   document.querySelectorAll('nav button').forEach(b => {
     const ocultar = !dueno && privadas.indexOf(b.dataset.v) !== -1;
@@ -522,6 +524,7 @@ function abrirAcceso(){
     render();
     await cargarCobros(false);
     await cargarCostos(false);
+    await cargarSinMini(false);
     toast('Acceso activado');
   };
   setTimeout(() => { const i = w.querySelector('#ac-clave'); if(i) i.focus(); }, 80);
@@ -639,8 +642,8 @@ function render(){
   if(vista === 'vender') return pintarVender(app);
   if(vista === 'cobros') return pintarCobros(app);
   if(vista === 'numeros') return pintarNumeros(app);
-  if(vista === 'promo') return pintarPromo(app);
   if(vista === 'cotizar') return pintarCotizar(app);
+  if(vista === 'sinmini') return pintarSinMini(app);
   if(vista === 'catalogo') return pintarCatalogo(app);
   if(vista === 'ajustes') return pintarAjustes(app);
 }
@@ -2530,6 +2533,184 @@ async function cargarCostos(mostrar){
   } finally {
     cargandoCostos = false;
   }
+}
+
+/* ---------------- inventario sin miniatura (catálogo de distribuidores) ---------------- */
+async function cargarSinMini(mostrar){
+  const t = token();
+  if(!t) return;
+  if(cargandoSinMini) return;
+  cargandoSinMini = true;
+  try {
+    const r = await fetch(API + '?action=sinmini&token=' + encodeURIComponent(t) + '&t=' + Date.now());
+    const j = await r.json();
+    if(!j || !j.ok) throw new Error((j && j.error) || 'No se pudo leer el catálogo de distribuidores');
+    sinmini = { items: Array.isArray(j.sinmini) ? j.sinmini : [], guardado: Date.now() };
+    sinminiError = '';
+    guardarLS(LS.sinmini, sinmini);
+    if(vista === 'sinmini') render();
+  } catch(e) {
+    sinminiError = /desconocida/i.test(e.message)
+      ? 'Falta actualizar el script de Google (versión 2.2.0).'
+      : (e.message || 'Sin señal');
+    if(mostrar) toast(sinminiError, 'error');
+  } finally {
+    cargandoSinMini = false;
+  }
+}
+
+function textoFichaSinMiniCel(x){
+  return `${x.nombre}\n\n${x.descripcion || ''}\n\nContado: ${money(x.precio_venta_crc)}\nA 2 pagos: ${money(x.precio_pagos_crc)}\n\nCualquier duda me avisás 🙌`;
+}
+
+async function fichaSinMiniaturaCel(x){
+  const W = 1080, M = 80, RIGHT = W - M;
+  const FUENTE = "'Segoe UI', Arial, sans-serif";
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = 5000;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, cv.height);
+  ctx.textBaseline = 'top';
+  let y = 46;
+  let logo = null;
+  try { logo = await cargarImagenURL('./logo.png'); } catch(e){}
+  if(logo){
+    const lado = 132, e = Math.min(lado / logo.width, lado / logo.height);
+    ctx.drawImage(logo, M, y, logo.width * e, logo.height * e);
+  }
+  const xN = M + 160;
+  ctx.textAlign = 'left'; ctx.fillStyle = '#171a21'; ctx.font = 'bold 30px ' + FUENTE;
+  ctx.fillText('King Quepoa', xN, y + 2);
+  ctx.fillStyle = '#5b5f66'; ctx.font = '20px ' + FUENTE;
+  ctx.fillText('Perfumería · Quepos, Costa Rica', xN, y + 44);
+  const tel = telefonoNegocio();
+  if(tel) ctx.fillText('WhatsApp ' + tel, xN, y + 72);
+  ctx.textAlign = 'right'; ctx.fillStyle = '#171a21'; ctx.font = 'bold 40px ' + FUENTE;
+  ctx.fillText('INFORMACIÓN', RIGHT, y);
+  ctx.fillStyle = '#8a8f99'; ctx.font = '18px ' + FUENTE;
+  ctx.fillText('Ficha de producto', RIGHT, y + 52);
+  y += 160;
+  ctx.strokeStyle = '#e6d6a8'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(M, y); ctx.lineTo(RIGHT, y); ctx.stroke();
+  y += 30;
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#8a6b1e'; ctx.font = 'bold 21px ' + FUENTE;
+  ctx.fillText(String(x.marca || '').toUpperCase(), M, y); y += 30;
+  ctx.fillStyle = '#171a21'; ctx.font = 'bold 38px ' + FUENTE;
+  for(const ln of envolverTexto(ctx, x.nombre, RIGHT - M)){ ctx.fillText(ln, M, y); y += 46; }
+  const meta = [x.categoria, x.concentracion, x.ml ? x.ml + ' ml' : '', x.familia].filter(Boolean).join(' · ');
+  if(meta){ ctx.fillStyle = '#5b5f66'; ctx.font = '20px ' + FUENTE; ctx.fillText(meta, M, y); y += 34; }
+  const desc = String(x.descripcion || '').trim().replace(/(^|\n)[^\p{L}\p{N}\n]+\s*(?=Notas:)/gu, '$1');
+  if(desc){
+    ctx.font = '21px ' + FUENTE;
+    const lineas = envolverTexto(ctx, desc, RIGHT - M - 56);
+    const alto = lineas.length * 31 + 48;
+    ctx.fillStyle = '#fbf4df'; ctx.fillRect(M, y, RIGHT - M, alto);
+    ctx.strokeStyle = '#ecd9a8'; ctx.lineWidth = 2; ctx.strokeRect(M, y, RIGHT - M, alto);
+    ctx.fillStyle = '#171a21';
+    let yy = y + 24;
+    for(const ln of lineas){ ctx.fillText(ln, M + 28, yy); yy += 31; }
+    y += alto + 30;
+  }
+  const contado = Math.round(num(x.precio_venta_crc));
+  const pagos = Math.round(num(x.precio_pagos_crc));
+  const base = Math.floor(pagos / 2);
+  const cajaH = 150, medio = (RIGHT - M - 20) / 2;
+  ctx.fillStyle = '#e8f5ee'; ctx.fillRect(M, y, medio, cajaH);
+  ctx.strokeStyle = '#cfe6d8'; ctx.lineWidth = 2; ctx.strokeRect(M, y, medio, cajaH);
+  ctx.fillStyle = '#0b6e5b'; ctx.font = 'bold 18px ' + FUENTE; ctx.fillText('PRECIO DE CONTADO', M + 26, y + 22);
+  ctx.fillStyle = '#171a21'; ctx.font = 'bold 38px ' + FUENTE; ctx.fillText(money(contado), M + 26, y + 56);
+  const x2 = M + medio + 20;
+  ctx.fillStyle = '#fbf4df'; ctx.fillRect(x2, y, medio, cajaH);
+  ctx.strokeStyle = '#ecd9a8'; ctx.strokeRect(x2, y, medio, cajaH);
+  ctx.fillStyle = '#8a6b1e'; ctx.font = 'bold 18px ' + FUENTE; ctx.fillText('A 2 PAGOS', x2 + 26, y + 22);
+  ctx.fillStyle = '#171a21'; ctx.font = 'bold 38px ' + FUENTE; ctx.fillText(money(pagos), x2 + 26, y + 56);
+  ctx.fillStyle = '#5b5f66'; ctx.font = '18px ' + FUENTE;
+  ctx.fillText(`2 pagos de ${money(base)} y ${money(pagos - base)}`, x2 + 26, y + 108);
+  y += cajaH + 34;
+  const pago = String(((datos.config || {}).datos_pago) || '').trim();
+  if(pago){
+    ctx.textAlign = 'center'; ctx.fillStyle = '#c9a24b'; ctx.font = 'bold 21px ' + FUENTE;
+    ctx.fillText('Datos para pagar (SINPE):', W / 2, y); y += 30;
+    ctx.fillStyle = '#5b5f66'; ctx.font = '20px ' + FUENTE;
+    for(const ln of pago.split('\n')){ ctx.fillText(ln, W / 2, y); y += 27; }
+    y += 8;
+  }
+  ctx.textAlign = 'center'; ctx.fillStyle = '#8a6b1e'; ctx.font = '22px ' + FUENTE;
+  for(const ln of envolverTexto(ctx, '¡Gracias por tu preferencia en King Quepoa, tu esencia, tu estilo, tu reino!', RIGHT - M)){
+    ctx.fillText(ln, W / 2, y); y += 31;
+  }
+  const H = Math.ceil(y) + 36;
+  const final = document.createElement('canvas'); final.width = W; final.height = H;
+  final.getContext('2d').drawImage(cv, 0, 0, W, H, 0, 0, W, H);
+  return await new Promise(r => final.toBlob(r, 'image/png'));
+}
+
+function pintarSinMini(app){
+  if(!esDueno()){ vista = 'stock'; return render(); }
+  const items = Array.isArray(sinmini.items) ? sinmini.items : [];
+  if(!items.length && !sinminiIntentado && !cargandoSinMini && token()){ sinminiIntentado = true; setTimeout(() => cargarSinMini(false), 80); }
+  const dists = new Set(items.map(x => String(x.distribuidor || '').trim()).filter(Boolean));
+  app.innerHTML = `
+    <div class="stock-filtros" id="sm-filtros">
+      <div class="buscador"><span>🔍</span><input id="sm-q" placeholder="Buscar por nombre, marca o descripción…" value="${esc(sinminiFiltro)}" autocomplete="off"></div>
+      <div class="hint" style="padding:2px 2px 8px">${items.length} productos · ${dists.size} distribuidor${dists.size === 1 ? '' : 'es'} · Catálogo de proveedores, sin foto</div>
+    </div>
+    ${sinminiError ? `<div class="card" style="border-color:var(--red)"><div class="hint" style="color:var(--red)">${esc(sinminiError)}</div><button class="btn ghost sm" id="sm-ref" style="margin-top:8px">⟳ Reintentar</button></div>` : ''}
+    ${!items.length && !sinminiError ? `<div class="card"><div class="hint">Cargando catálogo de distribuidores…</div></div>` : ''}
+    <div id="sm-lista"></div>`;
+  $('#sm-q').addEventListener('input', e => { sinminiFiltro = e.target.value; pintarListaSinMini(); });
+  const ref = $('#sm-ref');
+  if(ref) ref.onclick = () => { sinminiIntentado = false; cargarSinMini(true); };
+  pintarListaSinMini();
+}
+
+function pintarListaSinMini(){
+  const cont = $('#sm-lista');
+  if(!cont) return;
+  const q = norm(sinminiFiltro);
+  const items = (Array.isArray(sinmini.items) ? sinmini.items : []).filter(x =>
+    !q || norm([x.nombre,x.marca,x.distribuidor,x.categoria,x.familia,x.concentracion,x.ml,x.descripcion].join(' ')).includes(q)
+  );
+  cont.innerHTML = items.length ? items.map(x => {
+    const meta = [x.marca,x.categoria,x.concentracion,x.ml ? x.ml + ' ml' : '',x.familia].filter(Boolean).join(' · ');
+    return `<div class="card" style="margin-bottom:10px">
+      <div style="font-weight:700;font-size:14px;line-height:1.35">${esc(x.nombre)}</div>
+      <div class="hint" style="margin-top:3px">${esc(meta)}</div>
+      <div class="hint" style="margin-top:3px">🏬 ${esc(x.distribuidor || '')}</div>
+      <div class="aviso" style="margin:8px 0;white-space:pre-wrap">${esc(x.descripcion || 'Sin descripción')}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px">
+        <div style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px"><small class="hint">Costo</small><b style="display:block;font-size:12.5px">${money(x.costo_crc)}</b></div>
+        <div style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px"><small class="hint">Tu venta</small><b style="display:block;font-size:12.5px;color:var(--gold2)">${money(x.precio_venta_crc)}</b></div>
+        <div style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px"><small class="hint">A 2 pagos</small><b style="display:block;font-size:12.5px">${money(x.precio_pagos_crc)}</b></div>
+      </div>
+      <div class="fila" style="gap:6px;flex-wrap:wrap">
+        <button class="btn ghost sm" data-sm-copiar="${esc(String(x.id))}">📋 Copiar ficha</button>
+        <button class="btn sm" data-sm-wa="${esc(String(x.id))}">📲 Enviar por WhatsApp</button>
+      </div>
+    </div>`;
+  }).join('') : `<div class="card"><div class="hint">No hay productos que coincidan con la búsqueda.</div></div>`;
+  cont.querySelectorAll('[data-sm-copiar]').forEach(b => {
+    b.onclick = () => {
+      const x = (sinmini.items || []).find(z => String(z.id) === b.dataset.smCopiar);
+      if(x) copiar(textoFichaSinMiniCel(x), '📋 Ficha completa copiada');
+    };
+  });
+  cont.querySelectorAll('[data-sm-wa]').forEach(b => {
+    b.onclick = async () => {
+      const x = (sinmini.items || []).find(z => String(z.id) === b.dataset.smWa);
+      if(!x) return;
+      const texto = textoFichaSinMiniCel(x);
+      try {
+        toast('🧾 Armando la ficha…');
+        const blob = await fichaSinMiniaturaCel(x);
+        await entregarImagen(blob, '🧾 Ficha copiada — pegala en el chat', texto);
+        setTimeout(() => abrirWhatsApp(texto, ''), 700);
+      } catch(e) {
+        await copiar(texto, '📋 Copié el texto: pegala en WhatsApp');
+        abrirWhatsApp(texto, '');
+      }
+    };
+  });
 }
 
 /* ---------------- cobros (clientes que deben) ---------------- */
@@ -5085,14 +5266,14 @@ function cambiarVista(v, empujar = true){
 
 function vistaDesdeURL(){
   const h = location.hash.replace('#','');
-  if(!['stock','vender','cobros','numeros','promo','cotizar','catalogo','ajustes'].includes(h)) return;
+  if(!['stock','vender','cobros','numeros','cotizar','sinmini','catalogo','ajustes'].includes(h)) return;
   if(h === vista) return;
   vista = h;
   render();
   if(h === 'stock' && token()) refrescarEstadoVentas();
   if(h === 'cobros'){ refrescarEstadoVentas(); cargarCobros(false); }
   if(h === 'numeros'){ refrescarEstadoVentas(); cargarNumeros(false); }
-  if(h === 'promo') cargarPromo(false);
+  if(h === 'sinmini') cargarSinMini(false);
   window.scrollTo(0,0);
 }
 
@@ -5112,7 +5293,7 @@ document.querySelectorAll('nav button').forEach(b => {
     if(vista === 'stock' && token()) refrescarEstadoVentas();
     if(vista === 'cobros'){ refrescarEstadoVentas(); cargarCobros(false); }
     if(vista === 'numeros'){ refrescarEstadoVentas(); cargarNumeros(false); }
-    if(vista === 'promo') cargarPromo(false);
+    if(vista === 'sinmini') cargarSinMini(false);
   });
 });
 $('#btn-sync').addEventListener('click', () => {
@@ -5120,6 +5301,7 @@ $('#btn-sync').addEventListener('click', () => {
   if(token()){
     refrescarEstadoVentas();
     cargarCostos(false);
+    cargarSinMini(false);
     if(vista === 'cobros') cargarCobros(false);
     if(vista === 'numeros') cargarNumeros(false);
   }
