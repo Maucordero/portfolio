@@ -142,6 +142,12 @@
   .cot-foto-app .prev img{width:100%;height:100%;object-fit:contain}
   .cot-foto-app .cuerpo{flex:1;min-width:0}
 
+  .sm-mas{margin-top:6px}
+  .sm-mas summary{cursor:pointer;color:var(--gold2);font-size:11.5px;font-weight:600;list-style:none}
+  .sm-mas summary::-webkit-details-marker{display:none}
+  .sm-mas summary:before{content:"▸ ";font-size:11px}
+  .sm-mas[open] summary:before{content:"▾ "}
+  .sm-mas .aviso{margin-top:6px;white-space:pre-wrap}
   .vacio{text-align:center;color:var(--muted);padding:40px 10px;font-size:14px}
   .vacio .em{font-size:34px;display:block;margin-bottom:8px}
 
@@ -311,7 +317,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.43.0';
+const VERSION = '1.44.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', promo:'kq_promo_v1', sinmini:'kq_sinmini_v1' };
@@ -2669,10 +2675,15 @@ function generoProdCel(x){
   return '';
 }
 function baseProdCel(x){
-  let s = normalizarProdCel(x.nombre || '').replace(/\([^)]*\)/g, ' ');
-  const marca = normalizarProdCel(x.marca || '').split(' ').filter(Boolean);
-  const stop = new Set(['eau','de','parfum','toilette','cologne','edp','edt','edc','extrait','ml','spray','natural','vaporisateur','the','by','and','for','pour','men','man','homme','hombre','him','caballero','unisex','tester','refillable','refill']);
-  const toks = s.split(' ').filter(t => t && !stop.has(t) && !marca.includes(t) && !/^\d+$/.test(t));
+  const n = normalizarProdCel(x.nombre || '');
+  const m = normalizarProdCel(x.marca || '');
+  let s = (m && !n.startsWith(m)) ? m + ' ' + n : n;
+  s = s.replace(/\b\d+(?:[.,]\d+)?\s*(?:ml|mililitros|fl\s*oz)\b/g, ' ');
+  s = s.replace(/[()]/g, ' ');
+  s = s.replace(/(\d)\s*([a-z])/g, '$1 $2');
+  const stop = new Set(['eau','de','parfum','toilette','cologne','edp','edt','edc','extrait','ml','spray','natural','vaporisateur','the','by','and','for','pour','unisex']);
+  const toks = s.split(' ').filter(t => t && !stop.has(t));
+  if(!toks.length) toks.push(s.trim() || 'x');
   toks.sort();
   return toks.join(' ') + '|' + concentracionProdCel(x);
 }
@@ -2755,7 +2766,7 @@ function pintarSinMini(app){
           ${dists.map(d => `<option value="${esc(d)}"${sinminiDist === d ? ' selected' : ''}>${esc(d)}</option>`).join('')}
         </select>
       </div>
-      <div class="hint" style="padding:0 2px 8px">${items.length} ofertas · ${dists.length} distribuidor${dists.length === 1 ? '' : 'es'} · Catálogo de proveedores, sin foto</div>
+      <div class="hint" style="padding:0 2px 8px">${agruparProdCel(items).length} perfumes · ${dists.length} distribuidor${dists.length === 1 ? '' : 'es'} · Catálogo de proveedores, sin foto</div>
     </div>
     ${sinminiError ? `<div class="card" style="border-color:var(--red)"><div class="hint" style="color:var(--red)">${esc(sinminiError)}</div><button class="btn ghost sm" id="sm-ref" style="margin-top:8px">⟳ Reintentar</button></div>` : ''}
     ${!items.length && !sinminiError ? `<div class="card"><div class="hint">Cargando catálogo de distribuidores…</div></div>` : ''}
@@ -2810,7 +2821,7 @@ function pintarListaSinMini(){
       <div class="hint" style="margin-top:3px">🏬 ${esc(x.distribuidor || '')}${todos ? ' · 🏆 Más barato' : ''}</div>
       <div class="hint" style="margin-top:2px">📅 ${x.fecha_publicacion ? fmtFechaCorta(x.fecha_publicacion) : (x.actualizado ? fmtFechaCorta(x.actualizado) : 'Fecha no indicada')}</div>
       ${ofertas.length ? `<div class="hint" style="margin-top:2px">También: ${otras}</div>` : ''}
-      <div class="aviso" style="margin:8px 0;white-space:pre-wrap">${esc(x.descripcion || 'Sin descripción')}</div>
+      <details class="sm-mas"><summary>Ver información</summary><div class="aviso">${esc(x.descripcion || 'Sin descripción')}</div><div class="hint">Publicado: ${x.fecha_publicacion ? fmtFechaCorta(x.fecha_publicacion) : (x.actualizado ? fmtFechaCorta(x.actualizado) : '—')} · ${esc(x.distribuidor || '')}</div></details>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px">
         <div style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px"><small class="hint">Costo</small><b style="display:block;font-size:12.5px">${money(x.costo_crc)}</b></div>
         <div style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px"><small class="hint">Tu venta</small><b style="display:block;font-size:12.5px;color:var(--gold2)">${money(x.precio_venta_crc)}</b></div>
