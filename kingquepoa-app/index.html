@@ -133,6 +133,10 @@
   .cot-cuota span:first-child{flex:1}
   .cot-cuota span:nth-child(2){color:var(--muted);font-size:12px}
   .cot-cuota b{color:var(--gold2);font-variant-numeric:tabular-nums}
+  .cot-cuota.pagada span,.cot-cuota.pagada b{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--gold)}
+  .cot-cuota.total{border-top:2px solid rgba(201,162,75,.45);margin-top:4px;padding-top:8px;font-weight:700}
+  .cot-cuota.total b{color:var(--text);font-size:13.5px}
+  .cot-aviso{font-size:11.5px;color:var(--red);margin:-4px 0 10px}
   .cot-foto-app{display:flex;gap:10px;align-items:center;background:var(--panel2);border:1px dashed var(--line2);border-radius:var(--r-sm);padding:10px;margin-bottom:12px}
   .cot-foto-app .prev{width:76px;height:76px;flex:none;display:flex;align-items:center;justify-content:center;background:#fff;border-radius:var(--r-xs);border:1px solid var(--line);overflow:hidden;color:var(--muted);font-size:26px;cursor:pointer}
   .cot-foto-app .prev img{width:100%;height:100%;object-fit:contain}
@@ -307,7 +311,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.32.3';
+const VERSION = '1.38.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', promo:'kq_promo_v1' };
@@ -4025,6 +4029,44 @@ function planCotizacion(cot){
   return { tipo, n, rec, total, cuotas };
 }
 
+// Primera quincena (día 1 o 16) posterior a una fecha.
+function siguienteQuincenaCot(fecha){
+  const f = /^\d{4}-\d{2}-\d{2}$/.test(String(fecha || '')) ? fecha : hoyISO();
+  return cuotasProg(f, 2)[1] || f;
+}
+
+// Adelanto opcional: va como primera fila y el saldo se reparte en las cuotas.
+function planConAdelantoCot(cot){
+  const plan = planCotizacion(cot);
+  const monto = Math.max(0, Math.round(num(cot && cot.adelanto)));
+  if(!(monto > 0)) return Object.assign({}, plan, { adelanto:0, saldo:plan.total, adelantoPagado:false });
+  const adel = Math.min(monto, plan.total);
+  const fechaBase = /^\d{4}-\d{2}-\d{2}$/.test(String((cot && cot.adelantoFecha) || ''))
+    ? cot.adelantoFecha
+    : ((cot && cot.fecha) || hoyISO());
+  const pagado = !!(cot && cot.adelantoPagado);
+  const cuotas = [{ etiqueta:'Adelanto', vencimiento:fechaBase, monto:adel, pagada:pagado, tipo:'abono' }];
+  const saldo = plan.total - adel;
+  // Si el adelanto es de una fecha pasada, las cuotas arrancan desde hoy.
+  const primera = siguienteQuincenaCot(fechaBase < hoyISO() ? hoyISO() : fechaBase);
+  if(saldo > 0){
+    if(plan.n > 0){
+      const partes = repartirMonto(saldo, plan.n);
+      const fechas = cuotasProg(primera, plan.n);
+      fechas.forEach((f, i) => cuotas.push({
+        etiqueta: etiquetaPagoCel(i + 1),
+        vencimiento: f,
+        monto: partes[i],
+        pagada: false,
+        tipo: 'pago',
+      }));
+    } else {
+      cuotas.push({ etiqueta:'Saldo', vencimiento:primera, monto:saldo, pagada:false, tipo:'pago' });
+    }
+  }
+  return Object.assign({}, plan, { adelanto:adel, saldo, adelantoPagado:pagado, cuotas });
+}
+
 function cotCostoCrc(){ return Math.round(num(cotEstado && cotEstado.costoCrc)); }
 function cotPrecioContado(){ return Math.max(0, Math.round(num(cotEstado && cotEstado.precioContado))); }
 function cotGanancia(total){ return Math.round(num(total) - cotCostoCrc()); }
@@ -4052,28 +4094,30 @@ function cotKpisHtml(){
 }
 
 function cotDetallePlanHtml(){
-  const plan = planCotizacion(cotEstado);
+  const plan = planConAdelantoCot(cotEstado);
   const gan = cotGanancia(plan.total);
-  if(!plan.n){
+  const pagos = plan.cuotas.filter(c => c.tipo === 'pago' && Math.round(c.monto) > 0);
+  if(!plan.n && !(plan.adelanto > 0)){
     return `<div class="aviso" style="margin-top:8px">
       <b>Contado: ${money(plan.total)}</b> en un solo pago.
       <div class="hint" style="margin-top:3px">Ganancia ${money(gan)}</div>
     </div>`;
   }
-  const iguales = plan.cuotas.every(c => Math.round(c.monto) === Math.round(plan.cuotas[0].monto));
-  const resumen = iguales
-    ? `${plan.n} pagos de ${money(plan.cuotas[0].monto)}`
-    : `${plan.n} pagos (montos abajo)`;
-  const filas = plan.cuotas.map(c => `<div class="cot-cuota">
-    <span>${esc(c.etiqueta)}</span><span>${fmtFechaCorta(c.vencimiento)}</span><b>${money(c.monto)}</b>
+  const iguales = pagos.length > 0 && pagos.every(c => Math.round(c.monto) === Math.round(pagos[0].monto));
+  const resumen = plan.adelanto > 0
+    ? `Adelanto ${money(plan.adelanto)} + saldo ${money(plan.saldo)}`
+    : (iguales ? `${plan.n} pagos de ${money(pagos[0].monto)}` : `${plan.n} pagos (montos abajo)`);
+  const filas = plan.cuotas.filter(c => Math.round(c.monto) > 0).map(c => `<div class="cot-cuota${c.pagada ? ' pagada' : ''}">
+    <span>${esc(c.etiqueta)}${c.pagada ? ' ✓' : ''}</span><span>${fmtFechaCorta(c.vencimiento)}</span><b>${money(c.monto)}</b>
   </div>`).join('');
   return `<div class="aviso" style="margin-top:8px">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
-      <b>A ${plan.n} pagos: ${money(plan.total)}</b>
+      <b>${plan.n ? `A ${plan.n} pagos` : 'Contado + adelanto'}: ${money(plan.total)}</b>
       ${plan.rec > 0 ? `<span class="hint">+${plan.rec}% recargo</span>` : ''}
     </div>
     <div class="hint" style="margin:3px 0 4px">${resumen} · Ganancia ${money(gan)}</div>
     ${filas}
+    <div class="cot-cuota total"><span>TOTAL</span><span></span><b>${money(plan.total)}</b></div>
   </div>`;
 }
 
@@ -4084,6 +4128,11 @@ function cotRefresh(){
   document.querySelectorAll('#ct-planes [data-plan]').forEach(b => {
     b.classList.toggle('on', b.dataset.plan === cotEstado.tipo);
   });
+  const av = $('#ct-adelanto-aviso');
+  if(av){
+    const plan = planConAdelantoCot(cotEstado);
+    av.classList.toggle('oculto', !(num(cotEstado.adelanto) >= plan.total && plan.total > 0));
+  }
   guardarBorradorCot();
 }
 
@@ -4114,6 +4163,9 @@ function leerBorradorCot(){
 function pintarResultadoCotizacion(){
   const cont = $('#ct-resultado');
   if(!cont || !cotEstado) return;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(cotEstado.adelantoFecha || ''))) cotEstado.adelantoFecha = cotEstado.fecha || hoyISO();
+  cotEstado.adelanto = Math.max(0, Math.round(num(cotEstado.adelanto)));
+  cotEstado.adelantoPagado = !!cotEstado.adelantoPagado;
   const origen = cotEstado.precioActual > 0
     ? 'Usa tu precio actual del sistema (lo podés cambiar)'
     : (cotEstado.margenTabla != null
@@ -4130,6 +4182,13 @@ function pintarResultadoCotizacion(){
     <div class="chips" id="ct-planes">
       ${COT_PLANES.map(x => `<button type="button" class="chip" data-plan="${x.tipo}">${x.etiqueta}</button>`).join('')}
     </div>
+    <div class="titulo" style="margin:14px 0 6px">Adelanto (opcional)</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <label class="f"><span>Monto</span><input id="ct-adelanto" type="number" min="0" step="1000" inputmode="numeric" placeholder="0" value="${cotEstado.adelanto > 0 ? Math.round(num(cotEstado.adelanto)) : ''}"></label>
+      <label class="f"><span>Fecha</span><input id="ct-adelanto-fecha" type="date" value="${cotEstado.adelantoFecha}"></label>
+    </div>
+    <label class="f" style="margin-top:-4px"><span style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:12.5px"><input type="checkbox" id="ct-adelanto-pagado" style="width:auto;accent-color:var(--accent)"${cotEstado.adelantoPagado ? ' checked' : ''}> Ya lo dio (plata recibida)</span></label>
+    <div class="cot-aviso oculto" id="ct-adelanto-aviso">El adelanto tiene que ser menor que el total.</div>
     <div id="ct-plan-detalle"></div>
     <div style="border-top:1px solid var(--line);margin:14px 0 12px"></div>
     <div class="titulo" style="margin:0 0 6px">Foto para la cotización</div>
@@ -4164,6 +4223,19 @@ function pintarResultadoCotizacion(){
   });
   cont.querySelectorAll('#ct-planes [data-plan]').forEach(b => {
     b.onclick = () => { cotEstado.tipo = b.dataset.plan; cotRefresh(); };
+  });
+  $('#ct-adelanto').addEventListener('input', () => {
+    cotEstado.adelanto = Math.max(0, Math.round(num($('#ct-adelanto').value)));
+    cotRefresh();
+  });
+  $('#ct-adelanto-fecha').addEventListener('change', () => {
+    const v = $('#ct-adelanto-fecha').value;
+    if(/^\d{4}-\d{2}-\d{2}$/.test(v)) cotEstado.adelantoFecha = v;
+    cotRefresh();
+  });
+  $('#ct-adelanto-pagado').addEventListener('change', () => {
+    cotEstado.adelantoPagado = !!$('#ct-adelanto-pagado').checked;
+    cotRefresh();
   });
   if(!promo && token()){
     const cache = leerLS(LS.promo, null);
@@ -4289,18 +4361,32 @@ async function cotPonerFoto(file){
 function textoCotizacionCel(){
   if(!cotEstado) return '';
   const cot = cotEstado;
-  const plan = planCotizacion(cot);
+  const plan = planConAdelantoCot(cot);
   const contado = cotPrecioContado();
   const nombre = primerNombreDe(($('#ct-cliente') || {}).value || '');
   const unir = arr => arr.length <= 1 ? (arr[0] || '') : `${arr.slice(0, -1).join(', ')} y ${arr[arr.length - 1]}`;
   let t = nombre ? `¡Hola ${nombre}! 👋\n` : '¡Hola! 👋\n';
   t += `Te paso la cotización del perfume *${cot.producto}*.\n`;
   t += `Al contado: ${money(contado)}.`;
-  if(plan.n){
+  const pagos = plan.cuotas.filter(c => c.tipo === 'pago' && Math.round(c.monto) > 0);
+  if(plan.adelanto > 0){
+    const montos = pagos.map(c => Math.round(c.monto));
+    const fechas = pagos.map(c => fmtFechaCorta(c.vencimiento));
+    const iguales = montos.length > 0 && montos.every(m => m === montos[0]);
+    let linea = `\nAdelanto de ${money(plan.adelanto)} el ${fmtFechaCorta(plan.cuotas[0].vencimiento)}`;
+    if(plan.n){
+      const det = `${plan.n} pago${plan.n === 1 ? '' : 's'} de ${iguales ? money(montos[0]) : unir(montos.map(m => money(m)))}`;
+      linea += `, y el saldo en ${det} — ${unir(fechas)}`;
+    } else if(pagos.length){
+      linea += `, y el saldo de ${money(plan.saldo)} el ${fechas[0]}`;
+    }
+    linea += ` (total ${money(plan.total)}).`;
+    t += linea;
+  } else if(plan.n){
     const montos = plan.cuotas.map(c => Math.round(c.monto));
     const fechas = plan.cuotas.map(c => fmtFechaCorta(c.vencimiento));
     const iguales = montos.every(m => m === montos[0]);
-    const det = iguales ? `${plan.n} pagos de ${money(montos[0])}` : `pagos de ${unir(montos.map(m => money(m)))}`;
+    const det = iguales ? `${plan.n} pago${plan.n === 1 ? '' : 's'} de ${money(montos[0])}` : `pagos de ${unir(montos.map(m => money(m)))}`;
     t += `\nO a ${plan.n} pagos (${money(plan.total)}): ${det} — ${unir(fechas)}.`;
   }
   t += '\n\nCualquier duda me avisás 🙌';
@@ -4315,21 +4401,25 @@ function cotNumero(){
 
 async function imagenCotizacionCel(){
   const cot = cotEstado;
-  const plan = planCotizacion(cot);
+  const plan = planConAdelantoCot(cot);
   const contado = cotPrecioContado();
   const cliente = String(($('#ct-cliente') || {}).value || '').trim();
   const tel = String(($('#ct-tel') || {}).value || '').trim();
+  const cuotas = plan.cuotas.filter(c => Math.round(c.monto) > 0);
+  const usaPlan = cuotas.length > 0;
+  const primeraPend = cuotas.find(c => !c.pagada) || cuotas[0];
+  const abonado = plan.adelantoPagado ? plan.adelanto : 0;
   const opts = {
     proforma: true,
     titulo: 'COTIZACIÓN',
     numero: cotNumero(),
-    etiquetaCabecera: plan.n ? 'A PAGOS' : 'TOTAL A PAGAR',
+    etiquetaCabecera: usaPlan ? (plan.n ? 'A PAGOS' : 'ADELANTO + SALDO') : 'TOTAL A PAGAR',
     montoCabecera: plan.total,
-    terminos: plan.n ? `${plan.n} pagos` : 'Contado',
-    cuotas: plan.n ? plan.cuotas : null,
-    vencimiento: plan.n ? plan.cuotas[0].vencimiento : cot.fecha,
-    saldo: plan.total,
-    abonado: 0,
+    terminos: plan.adelanto > 0 ? (plan.n ? `${plan.n} pagos + adelanto` : 'Adelanto + saldo') : (plan.n ? `${plan.n} pagos` : 'Contado'),
+    cuotas: usaPlan ? cuotas : null,
+    vencimiento: primeraPend ? primeraPend.vencimiento : (cot.fecha || hoyISO()),
+    saldo: plan.total - abonado,
+    abonado,
     etiquetaCliente: 'Cotización para',
     config: datos.config || {},
     logo: './logo.png',
@@ -4341,12 +4431,16 @@ async function imagenCotizacionCel(){
     items: [{ nombre: cot.producto, cantidad: 1, precio_unitario_crc: contado }],
     total: plan.total,
     fecha: cot.fecha,
-    saldo: plan.total,
+    saldo: plan.total - abonado,
   }, opts);
 }
 
 async function enviarCotizacionWhatsApp(){
   if(!cotEstado) return;
+  const plan = planConAdelantoCot(cotEstado);
+  if(num(cotEstado.adelanto) > 0 && num(cotEstado.adelanto) >= plan.total){
+    return toast('El adelanto tiene que ser menor que el total', 'error');
+  }
   const tel = String(($('#ct-tel') || {}).value || '').trim();
   const texto = textoCotizacionCel();
   toast('🧾 Armando la cotización…');
@@ -4403,6 +4497,9 @@ function calcularCotizacion(){
     margenTabla: sug ? sug.pct : null,
     tipo: 'contado',
     fecha: hoyISO(),
+    adelanto: 0,
+    adelantoFecha: hoyISO(),
+    adelantoPagado: false,
     // La foto se mantiene si es el mismo perfume; si cambia, se limpia.
     foto: (cotEstado && cotEstado.producto === nombre) ? (cotEstado.foto || '') : '',
   };
