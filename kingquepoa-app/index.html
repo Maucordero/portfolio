@@ -311,7 +311,7 @@
    ============================================================ */
 
 const API = 'https://script.google.com/macros/s/AKfycbxwgQj5KlOZh7evelU9FsjJdLVZZSYh8hn5N51lSsLD13vmoajNJJg09u93h5OKopev/exec';
-const VERSION = '1.39.0';
+const VERSION = '1.40.0';
 const FOTOS = './fotos/';
 const FOTOS_GRANDES = './fotos_grandes/';
 const LS = { datos:'kq_datos_v1', token:'kq_token_v1', notas:'kq_notas_v1', cobros:'kq_cobros_v1', ventas:'kq_ventas_v1', abonos:'kq_abonos_v1', abonosPend:'kq_abonos_pend_v1', numeros:'kq_numeros_v1', costos:'kq_costos_v1', promo:'kq_promo_v1', sinmini:'kq_sinmini_v1' };
@@ -327,7 +327,7 @@ let abonosPendientes = [];
 let nums = null, numsError = '', numsFiltro = 'todas', cargandoNums = false;
 let costos = null, costosError = '', cargandoCostos = false;
 let sinmini = leerLS(LS.sinmini, null) || { items:[], guardado:null };
-let sinminiError = '', cargandoSinMini = false, sinminiFiltro = '', sinminiIntentado = false;
+let sinminiError = '', cargandoSinMini = false, sinminiFiltro = '', sinminiDist = 'todos', sinminiIntentado = false;
 let cotEstado = null;   // cotización en pantalla (no se guarda en ningún lado)
 let vista = 'stock';
 let filtro = { q:'', cat:'Todos', soloStock:false };
@@ -2645,20 +2645,43 @@ async function fichaSinMiniaturaCel(x){
   return await new Promise(r => final.toBlob(r, 'image/png'));
 }
 
+function claveProdCel(x){
+  let s = norm(x.nombre);
+  const stop = new Set(['eau','de','parfum','toilette','cologne','edp','edt','edc','extrait','elixir','intense','intensa','tester','set','regalo','gift','ml','spray','natural','vaporisateur','the','by','and','for','men','women','homme','femme','hombre','mujer','unisex']);
+  const marca = norm(x.marca).split(' ').filter(Boolean);
+  const toks = s.split(' ').filter(t => t && !stop.has(t) && !marca.includes(t) && !/^\d+$/.test(t));
+  toks.sort();
+  let c = norm(x.concentracion || '');
+  if(!c){
+    if(/\bedp\b|eau de parfum/.test(s)) c = 'edp';
+    else if(/\bedt\b|eau de toilette/.test(s)) c = 'edt';
+    else if(/elixir/.test(s)) c = 'elixir';
+    else if(/parfum/.test(s)) c = 'parfum';
+  }
+  return toks.join(' ') + '|' + (x.ml || '') + '|' + c;
+}
+
 function pintarSinMini(app){
   if(!esDueno()){ vista = 'stock'; return render(); }
   const items = Array.isArray(sinmini.items) ? sinmini.items : [];
   if(!items.length && !sinminiIntentado && !cargandoSinMini && token()){ sinminiIntentado = true; setTimeout(() => cargarSinMini(false), 80); }
-  const dists = new Set(items.map(x => String(x.distribuidor || '').trim()).filter(Boolean));
+  const dists = [...new Set(items.map(x => String(x.distribuidor || '').trim()).filter(Boolean))].sort((a,b) => a.localeCompare(b, 'es'));
   app.innerHTML = `
     <div class="stock-filtros" id="sm-filtros">
       <div class="buscador"><span>🔍</span><input id="sm-q" placeholder="Buscar por nombre, marca o descripción…" value="${esc(sinminiFiltro)}" autocomplete="off"></div>
-      <div class="hint" style="padding:2px 2px 8px">${items.length} productos · ${dists.size} distribuidor${dists.size === 1 ? '' : 'es'} · Catálogo de proveedores, sin foto</div>
+      <div style="display:flex;gap:8px;align-items:center;padding:2px 2px 8px">
+        <select id="sm-dist" style="flex:1;min-width:0">
+          <option value="todos">Todos · más barato primero</option>
+          ${dists.map(d => `<option value="${esc(d)}"${sinminiDist === d ? ' selected' : ''}>${esc(d)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="hint" style="padding:0 2px 8px">${items.length} ofertas · ${dists.length} distribuidor${dists.length === 1 ? '' : 'es'} · Catálogo de proveedores, sin foto</div>
     </div>
     ${sinminiError ? `<div class="card" style="border-color:var(--red)"><div class="hint" style="color:var(--red)">${esc(sinminiError)}</div><button class="btn ghost sm" id="sm-ref" style="margin-top:8px">⟳ Reintentar</button></div>` : ''}
     ${!items.length && !sinminiError ? `<div class="card"><div class="hint">Cargando catálogo de distribuidores…</div></div>` : ''}
     <div id="sm-lista"></div>`;
   $('#sm-q').addEventListener('input', e => { sinminiFiltro = e.target.value; pintarListaSinMini(); });
+  $('#sm-dist').addEventListener('change', e => { sinminiDist = e.target.value; pintarListaSinMini(); });
   const ref = $('#sm-ref');
   if(ref) ref.onclick = () => { sinminiIntentado = false; cargarSinMini(true); };
   pintarListaSinMini();
@@ -2668,15 +2691,34 @@ function pintarListaSinMini(){
   const cont = $('#sm-lista');
   if(!cont) return;
   const q = norm(sinminiFiltro);
-  const items = (Array.isArray(sinmini.items) ? sinmini.items : []).filter(x =>
-    !q || norm([x.nombre,x.marca,x.distribuidor,x.categoria,x.familia,x.concentracion,x.ml,x.descripcion].join(' ')).includes(q)
+  const todos = sinminiDist === 'todos';
+  let items = (Array.isArray(sinmini.items) ? sinmini.items : []).filter(x =>
+    (todos || String(x.distribuidor || '') === sinminiDist) &&
+    (!q || norm([x.nombre,x.marca,x.distribuidor,x.categoria,x.familia,x.concentracion,x.ml,x.descripcion].join(' ')).includes(q))
   );
-  cont.innerHTML = items.length ? items.map(x => {
+  let filas;
+  if(todos){
+    const grupos = new Map();
+    for(const x of items){
+      const k = claveProdCel(x);
+      if(!grupos.has(k)) grupos.set(k, []);
+      grupos.get(k).push(x);
+    }
+    filas = [...grupos.values()].map(ofertas => {
+      ofertas.sort((a,b) => num(a.costo_crc) - num(b.costo_crc));
+      return { x: ofertas[0], ofertas: ofertas.slice(1) };
+    }).sort((a,b) => num(a.x.costo_crc) - num(b.x.costo_crc) || norm(a.x.nombre).localeCompare(norm(b.x.nombre), 'es'));
+  } else {
+    filas = items.slice().sort((a,b) => norm(a.nombre).localeCompare(norm(b.nombre), 'es')).map(x => ({ x, ofertas: [] }));
+  }
+  cont.innerHTML = filas.length ? filas.map(({ x, ofertas }) => {
     const meta = [x.marca,x.categoria,x.concentracion,x.ml ? x.ml + ' ml' : '',x.familia].filter(Boolean).join(' · ');
+    const otras = ofertas.map(o => `${esc(o.distribuidor)} ${money(o.costo_crc)}`).join(' · ');
     return `<div class="card" style="margin-bottom:10px">
       <div style="font-weight:700;font-size:14px;line-height:1.35">${esc(x.nombre)}</div>
       <div class="hint" style="margin-top:3px">${esc(meta)}</div>
-      <div class="hint" style="margin-top:3px">🏬 ${esc(x.distribuidor || '')}</div>
+      <div class="hint" style="margin-top:3px">🏬 ${esc(x.distribuidor || '')}${todos ? ' · 🏆 Más barato' : ''}</div>
+      ${ofertas.length ? `<div class="hint" style="margin-top:2px">También: ${otras}</div>` : ''}
       <div class="aviso" style="margin:8px 0;white-space:pre-wrap">${esc(x.descripcion || 'Sin descripción')}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px">
         <div style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px"><small class="hint">Costo</small><b style="display:block;font-size:12.5px">${money(x.costo_crc)}</b></div>
